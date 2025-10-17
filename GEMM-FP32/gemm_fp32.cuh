@@ -33,4 +33,7 @@ typedef float fp32_t;
 #define DIM_THREAD_BLOCK_X 32
 #define DIM_THREAD_BLOCK_Y 8
 
+/* Shared memory tile dimensions */
+#define TILE_SIZE 32
+
 #endif /* !GEMM_FP32_CUH */
