@@ -9,11 +9,11 @@ CUFILES := gemm_fp64.cu
 # -DEXTRALARGE_DATASET   2048x2048
 DATASET := -DEXTRALARGE_DATASET
 
-# ARCH := -gencode arch=compute_89,code=sm_89
+ARCH := -gencode arch=compute_89,code=sm_89
 CFLAGS := -O3
 
 all:
-	nvcc $(CFLAGS) $(DATASET) $(CUFILES) -o $(EXECUTABLE)
+	nvcc $(CFLAGS) $(DATASET) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
 
 clean:
 	rm -f *~ $(EXECUTABLE)
