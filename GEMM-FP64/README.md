@@ -2,9 +2,8 @@
 
 ## To-Do
 
-- [ ] Setup directory structure
-- [ ] Implement basic kernel
-- [ ] Add templating for compile time parameters
+- [*] Implement basic kernel
+- [*] Setup directory structure & Makefile
 - [ ] Add 2-D Tiling
 - [ ] Global Memory Access Optimizations
   - [ ] Batch Global Memory Accesses (Loop Unrolling)
@@ -18,4 +17,7 @@
 - [ ] Add Fine-Tuning Script
   - [ ] Fine-tune for A100's
 - [ ] Add Double Buffering
+- [ ] Add the Epilogue ()
 - [ ] Basic Warp Specialization (DMA warps load next tile while compute warps process the current tile)
+- [ ] ...More to come...
+
