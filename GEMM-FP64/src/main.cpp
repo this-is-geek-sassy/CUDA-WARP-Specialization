@@ -6,7 +6,7 @@
 #include "drivers/dgemm_gmem_optm_driver.h"
 #include "drivers/dgemm_register_tiled_driver.h"
 #include "drivers/dgemm_bank_conflicts_driver.h" 
-
+#include "drivers/dgemm_overlapped_driver.h" 
 
 /// @brief Used to store Matrix on the host.
 /// @param m Number of rows of the matrix.
@@ -194,6 +194,10 @@ int main(int argc, char* argv[]) {
       break;
     case 5:
       success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(M, N, hP.ptr, hC);
+      break;
+    case 6:
+      success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     default:
