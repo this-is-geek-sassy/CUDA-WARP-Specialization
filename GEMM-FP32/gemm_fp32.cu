@@ -11,10 +11,12 @@
 #define POLYBENCH_TIME 1
 
 #include "gemm_fp32.cuh"
-#include "common/polybench.h"
-#include "common/polybenchUtilFuncts.h"
+#include "../../common/polybench.h"
+#include "../../common/polybenchUtilFuncts.h"
 
 #define GPU_DEVICE 0
+
+#include "../gpu_utils.h"
 
 //define the error threshold for the results "not matching"
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
@@ -103,14 +105,6 @@ void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj),
     }
     printf("Non-Matching CPU-GPU Outputs Beyond Error Threshold of %4.2f Percent: %d\n", 
            PERCENT_DIFF_ERROR_THRESHOLD, fail);
-}
-
-void GPU_argv_init()
-{
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, GPU_DEVICE);
-    printf("Setting device %d with name %s\n", GPU_DEVICE, deviceProp.name);
-    cudaSetDevice(GPU_DEVICE);
 }
 
 __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
@@ -262,4 +256,4 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-#include "common/polybench.c"
+#include "../../common/polybench.c"
