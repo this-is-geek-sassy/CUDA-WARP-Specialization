@@ -28,9 +28,9 @@ bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC)
   dim3 blockDim(TS, TS, 1);
 
   double *dA = nullptr, *dB = nullptr, *dC = nullptr;
-  if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(double)))) return false;
-  if(!CUDA_CHECK(cudaMalloc(&dB, K * N * sizeof(double)))) return false;
-  if(!CUDA_CHECK(cudaMalloc(&dC, M * N * sizeof(double)))) return false;
+  if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(double)))) goto cleanup;
+  if(!CUDA_CHECK(cudaMalloc(&dB, K * N * sizeof(double)))) goto cleanup;
+  if(!CUDA_CHECK(cudaMalloc(&dC, M * N * sizeof(double)))) goto cleanup;
 
   if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
