@@ -7,9 +7,9 @@
 - [x] Add CUDA Error Handling
 - [x] Add 2-D Tiling
 - [ ] Global Memory Access Optimizations
-  - [ ] Batch Global Memory Accesses (Loop Unrolling)
+  - [x] Batch Global Memory Accesses (Loop Unrolling)
     - [ ] Verify PTX & SASS
-  - [ ] Chunk Glocal Memory Accesses (Force compiler to use widest load instructions)
+  - [x] Chunk Glocal Memory Accesses (Force compiler to use widest load instructions)
     - [ ] Verify PTX & SASS
   - [ ] Overlap Global Memory Reads with Computations
 - [ ] Shared Memory Access Optimizations
