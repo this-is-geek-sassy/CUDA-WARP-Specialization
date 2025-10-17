@@ -1,11 +1,11 @@
-#ifndef DGEMM_BANK_CONFLICTS_CUH
-#define DGEMM_BANK_CONFLICTS_CUH
+#ifndef DGEMM_OVERLAPPED_CUH
+#define DGEMM_OVERLAPPED_CUH
 
 #include <cuda.h>
 #include <cassert>
 #include "utils/global_mem_utils.cuh"
 
-/// @brief Bank Conflicts Free DGEMM Kernel
+/// @brief Computation Overlapped Global Memory Reads DGEMM Kernel
 /// @param BM Tile Size Dimension (compile-time constant)
 /// @param BK Tile Size Dimension (compile-time constant)
 /// @param BN Tile Size Dimension (compile-time constant)
@@ -21,7 +21,7 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
-__global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
+__global__ void dgemm_overlapped(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
   extern __shared__ double sm[];
   double* sA = &sm[0];
   double* sB = &sm[BM * BK];
@@ -42,28 +42,66 @@ __global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, in
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
-  for(unsigned int bk = 0; bk < K; bk += BK) {
-    double* gA = A + (bm * K + bk);
-    double* gB = B + (bk * N + bn);
-    readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
-    readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
-    __syncthreads();
+  // Allocate registers for loading next iteration's tile.
+  constexpr unsigned int BN_VECTORIZED = BN / 2;
+  constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED; 
+  constexpr unsigned int NUM_ITERS = BM / ROW_STEP;
+  float4 sA_reg[NUM_ITERS];
+  float4 sB_reg[NUM_ITERS];
 
+  // Load first tile.
+  double* gA = A + (bm * K);
+  double* gB = B + bn;
+  readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
+  readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
+  __syncthreads();
+
+  // Update the global memory indexes to next tile.
+  gA += BK;
+  gB += BK * N;
+
+  for(unsigned int bk = BK; bk < K; bk += BK) {
+    // Load the next tile from global memory into registers.
+    loadTileChunked<BM, BK, NUM_THREADS, NUM_ITERS>(K, gA, sA_reg);
+    loadTileChunked<BK, BN, NUM_THREADS, NUM_ITERS>(N, gB, sB_reg);
+
+    // Perform computation on current tile.
     for(int wk = 0; wk < BK; wk += TK) {
-      // Tiled loads into Register Memory (Need to check PTX and SASS to confirm unrolling and chunking)
       for(int k = 0; k < TK; k++) {
         for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * BDM) * BK + (wk + k)];
         for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + (tx + j * BDN)];
       }
   
-      // FMA operations on Register Memory (Need to check PTX and SASS to confirm unrolling)
       for(int i = 0; i < TM; i++)
         for(int j = 0; j < TN; j++)
           for(int k = 0; k < TK; k++)
             acc_reg[i][j] = fma(a_reg[i][k], b_reg[k][j], acc_reg[i][j]);
     }
     __syncthreads();
+
+    // Update the global memory indexes to next tile.
+    gA += BK;
+    gB += BK * N;
+
+    // Store the next tile from registers into shared memory.
+    storeTileChunked<BM, BK, NUM_THREADS, NUM_ITERS>(sA_reg, sA);
+    storeTileChunked<BK, BN, NUM_THREADS, NUM_ITERS>(sB_reg, sB);
+    __syncthreads();
   }
+
+  // Perform computation on last tile.
+  for(int wk = 0; wk < BK; wk += TK) {
+    for(int k = 0; k < TK; k++) {
+      for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * BDM) * BK + (wk + k)];
+      for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + (tx + j * BDN)];
+    }
+
+    for(int i = 0; i < TM; i++)
+      for(int j = 0; j < TN; j++)
+        for(int k = 0; k < TK; k++)
+          acc_reg[i][j] = fma(a_reg[i][k], b_reg[k][j], acc_reg[i][j]);
+  }
+  __syncthreads();
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
@@ -72,4 +110,4 @@ __global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, in
   }
 }
 
-#endif // DGEMM_BANK_CONFLICTS_CUH
+#endif // DGEMM_OVERLAPPED_CUH
