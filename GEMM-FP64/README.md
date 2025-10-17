@@ -2,8 +2,8 @@
 
 ## To-Do
 
-- [*] Implement basic kernel
-- [*] Setup directory structure & Makefile
+- [x] Implement basic kernel
+- [x] Setup directory structure & Makefile
 - [ ] Add 2-D Tiling
 - [ ] Global Memory Access Optimizations
   - [ ] Batch Global Memory Accesses (Loop Unrolling)
