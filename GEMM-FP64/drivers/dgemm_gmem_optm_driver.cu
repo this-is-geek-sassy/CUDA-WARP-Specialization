@@ -42,6 +42,7 @@ bool dgemm_gmem_optm_driver(double alpha, double beta, int M, int N, int K, doub
 
   if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(dC, hC, M * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
   std::cout << "DRIVER: Launching GMEM Optimised Kernel..." << std::endl;
   dgemm_gmem_optm<BM, BK, BN, TM, TN, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);

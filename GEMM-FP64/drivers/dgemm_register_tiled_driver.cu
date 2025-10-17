@@ -43,6 +43,7 @@ bool dgemm_register_tiled_driver(double alpha, double beta, int M, int N, int K,
 
   if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(dC, hC, M * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
   std::cout << "DRIVER: Launching Register Tiled Kernel..." << std::endl;
   dgemm_register_tiled<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
