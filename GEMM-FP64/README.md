@@ -14,7 +14,7 @@
 - [ ] Shared Memory Access Optimizations
   - [x] Add Register Tiling
     - [ ] Verify PTX & SASS
-  - [ ] Resolve Bank Conflicts
+  - [x] Resolve Bank Conflicts
 - [x] Add the Epilogue
 - [ ] Overlap Global Memory Reads with Computations
 - [ ] Add Fine-Tuning Script
