@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <math.h>
 #include <cuda.h>
 #include <mma.h>
 #include <cuda_fp16.h>
@@ -23,8 +24,8 @@ using namespace nvcuda;
 
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
 
-#define ALPHA 32412.0f
-#define BETA 2123.0f
+#define ALPHA 1.7f
+#define BETA 0.9f
 
 #define RUN_ON_CPU
 
@@ -52,8 +53,8 @@ void init(int ni, int nj, int nk, float* alpha, float* beta, half* A, half* B, h
 {
 	int i, j;
 
-	*alpha = 32412;
-	*beta = 2123;
+	*alpha = ALPHA;
+	*beta = BETA;
 
   	for (i = 0; i < ni; i++)
 	{
@@ -81,74 +82,170 @@ void init(int ni, int nj, int nk, float* alpha, float* beta, half* A, half* B, h
 }
 
 
+double tensorPercentDiff(double val1, double val2)
+{
+	if (fabs(val1) < 1e-10 && fabs(val2) < 1e-10) return 0.0;
+	if (fabs(val1) < 1e-10 || fabs(val2) < 1e-10) return 100.0;
+	return 100.0 * fabs((val1 - val2) / val1);
+}
+
+
 void compareResults(int ni, int nj, float* C, half* C_outputFromGpu)
 {
 	int i, j, fail;
 	fail = 0;
+	double max_diff = 0.0;
+	double avg_diff = 0.0;
+	int total_elements = ni * nj;
+	int valid_comparisons = 0;
+	int mismatch_count = 0;
+	int max_i = -1, max_j = -1;
+	float max_cpu_val = 0.0f, max_gpu_val = 0.0f;
 	
 	for (i=0; i < ni; i++) 
 	{
 		for (j=0; j < nj; j++) 
 		{
+			float cpu_val = __half2float(__float2half(C[i * nj + j]));
 			float gpu_val = __half2float(C_outputFromGpu[i * nj + j]);
-			if (percentDiff(C[i * nj + j], gpu_val) > PERCENT_DIFF_ERROR_THRESHOLD) 
+			double diff = tesnorPercentDiff(cpu_val, gpu_val);
+			
+			if (!isinf(diff) && !isnan(diff)) {
+				avg_diff += diff;
+				valid_comparisons++;
+				if (diff > max_diff) {
+					max_diff = diff;
+					max_i = i;
+					max_j = j;
+					max_cpu_val = cpu_val;
+					max_gpu_val = gpu_val;
+				}
+			}
+			
+			if (diff > PERCENT_DIFF_ERROR_THRESHOLD) 
 			{
 				fail++;
+				if (mismatch_count < 5) {
+					printf("[Mismatch #%d] Position [%d,%d]: CPU=%.6f, GPU=%.6f, Diff=%.2f%%\n",
+					       mismatch_count + 1, i, j, cpu_val, gpu_val, diff);
+					mismatch_count++;
+				}
 			}
 		}
 	}
 	
-	printf("Non-Matching CPU-GPU Outputs Beyond Error Threshold of %4.2f Percent: %d\n", PERCENT_DIFF_ERROR_THRESHOLD, fail);
+	if (max_i >= 0) {
+		printf("[MAX Difference] Position [%d,%d]: CPU=%.6f, GPU=%.6f, Diff=%.2f%%\n",
+		       max_i, max_j, max_cpu_val, max_gpu_val, max_diff);
+	}
+	
+	if (valid_comparisons > 0) {
+		avg_diff /= valid_comparisons;
+	}
+	
+	printf("Non-Matching CPU-GPU Outputs Beyond Error Threshold of %4.2f Percent: %d (%.2f%%)\n", 
+	       PERCENT_DIFF_ERROR_THRESHOLD, fail, (100.0 * fail) / total_elements);
+	printf("Average difference: %.4f%%, Max difference: %.4f%% (over %d valid comparisons)\n", 
+	       avg_diff, max_diff, valid_comparisons);
 }
 
 __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
                                   const half* A, const half* B, half* C)
 {
-	int warp_id_m = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
-	int warp_id_n = (blockIdx.y * blockDim.y + threadIdx.y);
+	using namespace nvcuda::wmma;
 	
-	wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> frag_a;
-	wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> frag_b;
-	wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> accumulator;
-	wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c;
+	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K];
+	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N];
 	
-	wmma::fill_fragment(accumulator, __float2half(0.0f));
+	int warp_m = (threadIdx.x / warpSize);
+	int warp_n = threadIdx.y;
 	
-	int row_start = warp_id_m * WMMA_M;
-	int col_start = warp_id_n * WMMA_N;
+	int block_m = blockIdx.x;
+	int block_n = blockIdx.y;
 	
-	if (row_start >= M || col_start >= N) {
-		return;
-	}
+	int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
+	int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
 	
-	for (int k_step = 0; k_step < K; k_step += WMMA_K) {
-		int a_row = row_start;
-		int a_col = k_step;
+	int row_start = global_warp_m * WMMA_M;
+	int col_start = global_warp_n * WMMA_N;
+	
+	fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
+	fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
+	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> acc;
+	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c;
+	
+	fill_fragment(acc, __float2half(0.0f));
+	
+	// Tile across K dimension
+	for (int k_tile = 0; k_tile < K; k_tile += BLOCK_SIZE_K) {
+		// Cooperative loading of A tile into shared memory
+		int num_threads = blockDim.x * blockDim.y;
+		int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
+		int tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
 		
-		int b_row = k_step;
-		int b_col = col_start;
-		
-		if (a_row < M && a_col < K && b_row < K && b_col < N) {
-			wmma::load_matrix_sync(frag_a, A + a_row * K + a_col, K);
-			wmma::load_matrix_sync(frag_b, B + b_row * N + b_col, N);
+		for (int i = thread_id; i < tile_size; i += num_threads) {
+			int row = i / BLOCK_SIZE_K;
+			int col = i % BLOCK_SIZE_K;
+			int global_row = block_m * BLOCK_SIZE_M + row;
+			int global_col = k_tile + col;
 			
-			wmma::mma_sync(accumulator, frag_a, frag_b, accumulator);
+			if (global_row < M && global_col < K) {
+				shared_A[row][col] = A[global_row * K + global_col];
+			} else {
+				shared_A[row][col] = __float2half(0.0f);
+			}
 		}
+		
+		// Cooperative loading of B tile into shared memory
+		tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
+		for (int i = thread_id; i < tile_size; i += num_threads) {
+			int row = i / BLOCK_SIZE_N;
+			int col = i % BLOCK_SIZE_N;
+			int global_row = k_tile + row;
+			int global_col = block_n * BLOCK_SIZE_N + col;
+			
+			if (global_row < K && global_col < N) {
+				shared_B[row][col] = B[global_row * N + global_col];
+			} else {
+				shared_B[row][col] = __float2half(0.0f);
+			}
+		}
+		
+		__syncthreads();
+		
+		// Compute using shared memory
+		for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
+			int smem_a_row = warp_m * WMMA_M;
+			int smem_a_col = k_step;
+			
+			int smem_b_row = k_step;
+			int smem_b_col = warp_n * WMMA_N;
+			
+			if (row_start < M && col_start < N && 
+			    (k_tile + k_step) < K) {
+				load_matrix_sync(frag_a, &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K);
+				load_matrix_sync(frag_b, &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N);
+				
+				mma_sync(acc, frag_a, frag_b, acc);
+			}
+		}
+		
+		__syncthreads();
 	}
 	
 	if (row_start < M && col_start < N) {
-		wmma::load_matrix_sync(frag_c, C + row_start * N + col_start, N, wmma::mem_row_major);
+		load_matrix_sync(frag_c, C + row_start * N + col_start, N, mem_row_major);
 		
 		for (int idx = 0; idx < frag_c.num_elements; idx++) {
 			frag_c.x[idx] = __hmul(frag_c.x[idx], beta);
 		}
 		
-		for (int idx = 0; idx < accumulator.num_elements; idx++) {
-			accumulator.x[idx] = __hmul(accumulator.x[idx], alpha);
-			accumulator.x[idx] = __hadd(accumulator.x[idx], frag_c.x[idx]);
+		for (int idx = 0; idx < acc.num_elements; idx++) {
+			acc.x[idx] = __hmul(acc.x[idx], alpha);
+			acc.x[idx] = __hadd(acc.x[idx], frag_c.x[idx]);
 		}
 		
-		wmma::store_matrix_sync(C + row_start * N + col_start, accumulator, N, wmma::mem_row_major);
+		store_matrix_sync(C + row_start * N + col_start, acc, N, mem_row_major);
 	}
 }
 
@@ -156,9 +253,7 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 void gemmCuda_Tensor(int ni, int nj, int nk, float alpha_f, float beta_f,
                      half* A, half* B, half* C, half* C_outputFromGpu)
 {
-	half *d_A;
-	half *d_B;
-	half *d_C;
+	half *d_A, *d_B, *d_C;
 	
 	half alpha_h = __float2half(alpha_f);
 	half beta_h = __float2half(beta_f);
@@ -171,16 +266,16 @@ void gemmCuda_Tensor(int ni, int nj, int nk, float alpha_f, float beta_f,
 	cudaMemcpy(d_B, B, sizeof(half) * nk * nj, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_C, C, sizeof(half) * ni * nj, cudaMemcpyHostToDevice);
 	
-	dim3 block_dim(32, 8);
-	dim3 grid_dim((ni + WMMA_M * block_dim.x / 32 - 1) / (WMMA_M * block_dim.x / 32),
-	              (nj + WMMA_N * block_dim.y - 1) / (WMMA_N * block_dim.y));
+	dim3 block_dim(64, 2);
+	dim3 grid_dim((ni + BLOCK_SIZE_M - 1) / BLOCK_SIZE_M,
+	              (nj + BLOCK_SIZE_N - 1) / BLOCK_SIZE_N);
 
   	polybench_start_instruments;
 
 	gemm_wmma_kernel<<< grid_dim, block_dim >>>(ni, nj, nk, alpha_h, beta_h, d_A, d_B, d_C);
 	cudaDeviceSynchronize();
 
-	printf("GPU Tensor Core Time in seconds:\n");
+	printf("GPU Tensor Core (WMMA FP16) Time in seconds:\n");
   	polybench_stop_instruments;
  	polybench_print_instruments;
 

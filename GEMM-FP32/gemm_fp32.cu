@@ -82,13 +82,22 @@ void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj),
     int i, j, fail;
     fail = 0;
     
+    // Debug: Print first few mismatches
+    int printCount = 0;
+    
     for (i=0; i < ni; i++) 
     {
         for (j=0; j < nj; j++) 
         {
-            if (percentDiff(C[i][j], C_outputFromGpu[i][j]) > PERCENT_DIFF_ERROR_THRESHOLD) 
+            fp32_t diff = percentDiff(C[i][j], C_outputFromGpu[i][j]);
+            if (diff > PERCENT_DIFF_ERROR_THRESHOLD) 
             {
                 fail++;
+                if (printCount < 5) {
+                    printf("Mismatch at [%d][%d]: CPU=%.6e, GPU=%.6e, diff=%.2f%%\n", 
+                           i, j, C[i][j], C_outputFromGpu[i][j], diff);
+                    printCount++;
+                }
             }
         }
     }
@@ -107,17 +116,53 @@ void GPU_argv_init()
 __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
                                 fp32_t *a, fp32_t *b, fp32_t *c)
 {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (i < ni && j < nj)
-    {
-        fp32_t temp = 0.0f;
-        for (int k = 0; k < nk; k++)
-        {
-            temp += alpha * a[i * nk + k] * b[k * nj + j];
+    // Shared memory for tiling
+    __shared__ fp32_t As[TILE_SIZE][TILE_SIZE];
+    __shared__ fp32_t Bs[TILE_SIZE][TILE_SIZE];
+    
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    
+    // Calculate global row and column for this thread
+    int row = by * TILE_SIZE + ty;
+    int col = bx * TILE_SIZE + tx;
+    
+    fp32_t sum = 0.0f;
+    
+    // Loop over tiles
+    int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
+    
+    for (int t = 0; t < numTiles; t++) {
+        // Load tile from matrix A into shared memory
+        int aCol = t * TILE_SIZE + tx;
+        if (row < ni && aCol < nk)
+            As[ty][tx] = alpha * a[row * nk + aCol];
+        else
+            As[ty][tx] = 0.0f;
+        
+        // Load tile from matrix B into shared memory
+        int bRow = t * TILE_SIZE + ty;
+        if (bRow < nk && col < nj)
+            Bs[ty][tx] = b[bRow * nj + col];
+        else
+            Bs[ty][tx] = 0.0f;
+        
+        __syncthreads();
+        
+        // Compute partial dot product for this tile
+        #pragma unroll
+        for (int k = 0; k < TILE_SIZE; k++) {
+            sum += As[ty][k] * Bs[k][tx];
         }
-        c[i * nj + j] = beta * c[i * nj + j] + temp;
+        
+        __syncthreads();
+    }
+    
+    // Write result to global memory
+    if (row < ni && col < nj) {
+        c[row * nj + col] = beta * c[row * nj + col] + sum;
     }
 }
 
@@ -139,16 +184,24 @@ void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
     cudaMemcpy(B_gpu, B, sizeof(fp32_t) * NK * NJ, cudaMemcpyHostToDevice);
     cudaMemcpy(C_gpu, C, sizeof(fp32_t) * NI * NJ, cudaMemcpyHostToDevice);
     
-    dim3 block(DIM_THREAD_BLOCK_X, DIM_THREAD_BLOCK_Y);
-    dim3 grid((NJ + DIM_THREAD_BLOCK_X - 1) / DIM_THREAD_BLOCK_X,
-              (NI + DIM_THREAD_BLOCK_Y - 1) / DIM_THREAD_BLOCK_Y);
+    dim3 block(TILE_SIZE, TILE_SIZE);
+    dim3 grid((NJ + TILE_SIZE - 1) / TILE_SIZE,
+              (NI + TILE_SIZE - 1) / TILE_SIZE);
 
     /* Start timer. */
     polybench_start_instruments;
 
     // Launch FP32-optimized kernel
     gemm_kernel_fp32<<< grid, block >>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("CUDA kernel launch error: %s\n", cudaGetErrorString(err));
+    }
     cudaDeviceSynchronize();
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("CUDA kernel execution error: %s\n", cudaGetErrorString(err));
+    }
 
     /* Stop and print timer. */
     printf("GPU Time in seconds (FP32):\n");
@@ -179,10 +232,13 @@ int main(int argc, char *argv[])
 
     init(ni, nj, nk, &alpha, &beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(C));
     
+    // Copy C to C_outputFromGpu for GPU computation
+    memcpy(C_outputFromGpu, C, sizeof(fp32_t) * NI * NJ);
+    
     GPU_argv_init();
     
     gemmCuda_fp32(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), 
-                  POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu));
+                  POLYBENCH_ARRAY(C_outputFromGpu), POLYBENCH_ARRAY(C_outputFromGpu));
 
     #ifdef RUN_ON_CPU
         /* Start timer. */

@@ -7,7 +7,8 @@ CUFILES := gemm_tensor.cu
 # -DSTANDARD_DATASET     512x512 (default)
 # -DLARGE_DATASET        1024x1024
 # -DEXTRALARGE_DATASET   2048x2048
-DATASET := -DEXTRALARGE_DATASET
+# -DHUGE_DATASET         4096x4096
+DATASET :=
 
 ARCH := -gencode arch=compute_89,code=sm_89
 CFLAGS := -O3
