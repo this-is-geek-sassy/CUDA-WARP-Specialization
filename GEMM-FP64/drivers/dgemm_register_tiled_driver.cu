@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/dgemm_basic_driver.h" 
-#include "kernels/dgemm_basic.cuh"
+#include "drivers/dgemm_register_tiled_driver.h" 
+#include "kernels/dgemm_register_tiled.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -14,18 +14,25 @@
         err == cudaSuccess; /* This is the value the macro expression returns */  \
     })
 
-/// @brief Driver for Basic DGEMM Kernel
+/// @brief Driver for 2D-Tiled DGEMM Kernel
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC) {
-  const unsigned int TS = 32;
-  const size_t sharedMemSize = 2 * TS * TS * sizeof(double);
-  dim3 gridDim(N/TS, M/TS, 1);
-  dim3 blockDim(TS, TS, 1);
+bool dgemm_register_tiled_driver(int M, int N, int K, double* hA, double* hB, double* hC) {
+  const unsigned int BM = 64;
+  const unsigned int BK = 16;
+  const unsigned int BN = 64;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
+  const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
+
+  dim3 gridDim(N/BN, M/BM, 1);
+  dim3 blockDim(BN/TN, BM/TM, 1);
+  const size_t sharedMemSize = BK * (BM + BN) * sizeof(double);
 
   double *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(double)))) goto cleanup;
@@ -35,8 +42,8 @@ bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC)
   if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Basic Kernel..." << std::endl;
-  dgemm_basic<TS><<<gridDim, blockDim, sharedMemSize>>>(M, N, K, dA, dB, dC);
+  std::cout << "DRIVER: Launching Register Tiled Kernel..." << std::endl;
+  dgemm_register_tiled<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(M, N, K, dA, dB, dC);
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;

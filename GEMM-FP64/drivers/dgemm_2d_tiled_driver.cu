@@ -40,7 +40,7 @@ bool dgemm_2d_tiled_driver(int M, int N, int K, double* hA, double* hB, double* 
   if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
-  std::cout << "DRIVER: Launching kernel..." << std::endl;
+  std::cout << "DRIVER: Launching 2D-Tiled Kernel..." << std::endl;
   dgemm_2d_tiled<BM, BK, BN, TM, TN><<<gridDim, blockDim, sharedMemSize>>>(M, N, K, dA, dB, dC);
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
