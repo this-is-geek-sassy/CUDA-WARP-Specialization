@@ -5,6 +5,8 @@
 
 /// @brief A basic DGEMM Kernel
 /// @param TS Tile Size (compile-time constant)
+/// @param alpha DGEMM parameter
+/// @param beta DGEMM parameter
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
@@ -12,7 +14,7 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int TS>
-__global__ void dgemm_basic(int M, int N, int K, double* A, double* B, double* C) {
+__global__ void dgemm_basic(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
   extern __shared__ double sm[];
   double* sA = &sm[0];
   double* sB = &sm[TS * TS];
@@ -34,7 +36,7 @@ __global__ void dgemm_basic(int M, int N, int K, double* A, double* B, double* C
     __syncthreads();
   }
 
-  C[(bm + ty) * N + (bn + tx)] = acc_reg;
+  C[(bm + ty) * N + (bn + tx)] = alpha * acc_reg + beta * C[(bm + ty) * N + (bn + tx)];
 }
 
 #endif // DGEMM_BASIC_CUH

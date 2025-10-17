@@ -15,13 +15,15 @@
     })
 
 /// @brief Driver for Basic DGEMM Kernel
+/// @param alpha DGEMM parameter
+/// @param beta DGEMM parameter
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC) {
+bool dgemm_basic_driver(double alpha, double beta, int M, int N, int K, double* hA, double* hB, double* hC) {
   const unsigned int TS = 32;
   const size_t sharedMemSize = 2 * TS * TS * sizeof(double);
   dim3 gridDim(N/TS, M/TS, 1);
@@ -36,7 +38,7 @@ bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC)
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
   std::cout << "DRIVER: Launching Basic Kernel..." << std::endl;
-  dgemm_basic<TS><<<gridDim, blockDim, sharedMemSize>>>(M, N, K, dA, dB, dC);
+  dgemm_basic<TS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;

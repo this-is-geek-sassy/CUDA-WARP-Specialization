@@ -167,6 +167,8 @@ int main(int argc, char* argv[]) {
   int M = hA.m;
   int K = hA.n;
   int N = hB.n;
+  double alpha = 1.0;
+  double beta = 0.0;
 
   // Allocate memory for product matrix.
   double* hC = (double*) malloc(M * N * sizeof(double));
@@ -175,23 +177,23 @@ int main(int argc, char* argv[]) {
   bool success = true;
   switch(kernel_no) {
     case 1:
-      success = dgemm_basic_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_basic_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     case 2:
-      success = dgemm_2d_tiled_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_2d_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     case 3:
-      success = dgemm_gmem_optm_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_gmem_optm_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     case 4:
-      success = dgemm_register_tiled_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_register_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     case 5:
-      success = dgemm_bank_conflicts_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     default:

@@ -12,6 +12,8 @@
 /// @param TM Work per thread across m-dimension (compile-time constant)
 /// @param TN Work per thread across n-dimension (compile-time constant)
 /// @param TK Work per thread across k-dimension (compile-time constant)
+/// @param alpha DGEMM parameter
+/// @param beta DGEMM parameter
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
@@ -19,7 +21,7 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
-__global__ void dgemm_register_tiled(int M, int N, int K, double* A, double* B, double* C) {
+__global__ void dgemm_register_tiled(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
   extern __shared__ double sm[];
   double* sA = &sm[0];
   double* sB = &sm[BM * BK];
@@ -43,8 +45,8 @@ __global__ void dgemm_register_tiled(int M, int N, int K, double* A, double* B, 
   for(unsigned int bk = 0; bk < K; bk += BK) {
     double* gA = A + (bm * K + bk);
     double* gB = B + (bk * N + bn);
-    tileMemcpyVectorised<BM, BK, NUM_THREADS>(gA, sA, K);
-    tileMemcpyVectorised<BK, BN, NUM_THREADS>(gB, sB, N);
+    loadTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
+    loadTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
     __syncthreads();
 
     for(int wk = 0; wk < BK; wk += TK) {
@@ -65,7 +67,7 @@ __global__ void dgemm_register_tiled(int M, int N, int K, double* A, double* B, 
 
   for(int i = 0; i < TM; i++) 
     for(int j = 0; j < TN; j++) 
-      C[(bm + ty + i * TM_STEP) * N + (bn + tx + j * TN_STEP)] = acc_reg[i][j]; 
+      C[(bm + ty + i * TM_STEP) * N + (bn + tx + j * TN_STEP)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * TM_STEP) * N + (bn + tx + j * TN_STEP)]; 
 }
 
 #endif // DGEMM_REGISTER_TILED_CUH
