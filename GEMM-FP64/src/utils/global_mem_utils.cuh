@@ -65,7 +65,7 @@ __forceinline__ __device__ void readTileChunked(const unsigned int N, double* sr
 /// @param dest Pointer to dest
 /// @param N Row stride of src
 template<unsigned int BM, unsigned int BN, unsigned int NUM_THREADS, unsigned int NUM_ITERS>
-__forceinline__ __device__ loadTileChunked(const unsigned int N, double* src, float4 regs[NUM_ITERS]) {
+__forceinline__ __device__ void loadTileChunked(const unsigned int N, double* src, float4 regs[NUM_ITERS]) {
   float4* src_float4 = reinterpret_cast<float4*>(src);
   constexpr unsigned int BN_VECTORIZED = BN / 2;
   const unsigned int N_vectorized = N / 2;
@@ -92,7 +92,7 @@ __forceinline__ __device__ loadTileChunked(const unsigned int N, double* src, fl
 /// @param dest Pointer to dest
 /// @param N Row stride of src
 template<unsigned int BM, unsigned int BN, unsigned int NUM_THREADS, unsigned int NUM_ITERS>
-__forceinline__ __device__ storeTileChunked(float4 regs[NUM_ITERS], double* dest) {
+__forceinline__ __device__ void storeTileChunked(float4 regs[NUM_ITERS], double* dest) {
   float4* dest_float4 = reinterpret_cast<float4*>(dest);
   constexpr unsigned int BN_VECTORIZED = BN / 2;
 
