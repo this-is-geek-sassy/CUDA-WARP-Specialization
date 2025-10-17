@@ -12,14 +12,14 @@
   - [x] Chunk Glocal Memory Accesses (Force compiler to use widest load instructions)
     - [ ] Verify PTX & SASS
 - [ ] Shared Memory Access Optimizations
-  - [ ] Add Register Tiling
+  - [x] Add Register Tiling
     - [ ] Verify PTX & SASS
-  - [x] Resolve Bank Conflicts
+  - [ ] Resolve Bank Conflicts
+- [ ] Add the Epilogue
 - [ ] Overlap Global Memory Reads with Computations
 - [ ] Add Fine-Tuning Script
   - [ ] Fine-tune for A100's
 - [ ] Add Double Buffering
-- [ ] Add the Epilogue
 - [ ] Basic Warp Specialization (DMA warps load next tile while compute warps process the current tile)
 - [ ] ...More to come...
 
