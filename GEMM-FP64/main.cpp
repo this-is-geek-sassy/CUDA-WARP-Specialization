@@ -98,9 +98,22 @@ bool verify(int M, int N, double* hP, double* hC) {
     if(flag) break;
   }
 
-  if(flag) std::cerr << "ERROR: Incorrect output!";
+  if(flag) std::cerr << "ERROR: Incorrect output!" << std::endl;
   else std::cout << "Correct output!" << std::endl;
   return flag;
+}
+
+/// @brief Prints a matrix to std::cout.
+/// @param M Number of rows.
+/// @param N Number of columns.
+/// @param A Pointer to the matrix.
+void print(int M, int N, double* A) {
+  for(int i = 0; i < M; i++) {
+    for(int j = 0; j < N; j++) {
+      std::cout << A[i * N + j] << " ";
+    }
+    std::cout << std::endl;
+  }
 }
 
 int main(int argc, char* argv[]) {
