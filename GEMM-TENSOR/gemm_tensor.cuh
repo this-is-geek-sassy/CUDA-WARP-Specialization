@@ -7,7 +7,7 @@
 # define GEMM_TENSOR_CUH
 
 
-# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET)
+# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET) && !defined(HUGE_DATASET)
 #  define STANDARD_DATASET
 # endif
 
@@ -26,7 +26,7 @@
 #define NK 512
 #  endif
 
-#  ifdef STANDARD_DATASET /* Default if unspecified. */
+#  ifdef STANDARD_DATASET 
 #define NI 512
 #define NJ 512
 #define NK 512
@@ -42,6 +42,12 @@
 #define NI 2048
 #define NJ 2048
 #define NK 2048
+#  endif
+
+#  ifdef HUGE_DATASET
+#define NI 4096
+#define NJ 4096
+#define NK 4096
 #  endif
 # endif /* !N */
 
@@ -61,8 +67,8 @@
 #define WMMA_K 16
 
 
-#define BLOCK_SIZE_M 128
-#define BLOCK_SIZE_N 128
+#define BLOCK_SIZE_M 32
+#define BLOCK_SIZE_N 32
 #define BLOCK_SIZE_K 16
 
 
@@ -70,7 +76,7 @@
 #define THREADS_PER_BLOCK (WARPS_PER_BLOCK * 32)
 
 
-#define WARP_SIZE_M 64
-#define WARP_SIZE_N 64
+#define WARP_SIZE_M 32
+#define WARP_SIZE_N 32
 
 #endif
