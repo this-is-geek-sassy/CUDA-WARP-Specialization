@@ -47,10 +47,14 @@ __global__ void dgemm_2d_tiled(int M, int N, int K, double* A, double* B, double
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
 
-  unsigned int bm = blockIdx.y * BM + tx;
-  unsigned int bn = blockIdx.x * BN + ty;
+  unsigned int bm = blockIdx.y * BM;
+  unsigned int bn = blockIdx.x * BN;
 
   double acc_reg[TM][TN];
+  for(int i = 0; i < TM; i++) 
+    for(int j = 0; j < TN; j++)
+      acc_reg[i][j] = 0.0;
+
   for(unsigned int bk = 0; bk < K; bk += BK) {
     double* gA = A + (bm * K + bk);
     double* gB = B + (bk * N + bn);
@@ -61,7 +65,7 @@ __global__ void dgemm_2d_tiled(int M, int N, int K, double* A, double* B, double
     for(int k = 0; k < BK; k++)
       for(int i = 0; i < TM; i++)
         for(int j = 0; j < TN; j++)
-          acc_reg[i][j] += sA[(ty * TM + i) * BK + k] * sB[k * BN + tx * TN + j];
+          acc_reg[i][j] = fma(sA[(ty * TM + i) * BK + k], sB[k * BN + tx * TN + j], acc_reg[i][j]);
     __syncthreads();
   }
 
