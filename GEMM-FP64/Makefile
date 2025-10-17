@@ -17,11 +17,12 @@ LDFLAGS :=
 TARGET := $(BUILD_DIR)/dgemm
 
 # --- Automatic File Discovery ---
-# Find all .cpp and .cu files in the project directories
-SOURCES := $(wildcard *.cpp) $(wildcard drivers/*.cu)
+# Find all .cpp and .cu files recursively in the current directory and subdirectories
+SOURCES := $(shell find . -name '*.cpp' -o -name '*.cu')
 
 # Generate object file names and map them to the build directory
 # e.g., drivers/dgemm.cu -> bin/drivers/dgemm.o
+# ./main.cpp -> bin/./main.o
 OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(patsubst %.cu,$(BUILD_DIR)/%.o,$(SOURCES)))
 
 # --- Build Rules ---
