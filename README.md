@@ -4,9 +4,19 @@ This repository contains optimized CUDA kernel implementations that are ready to
 
 ## What's Inside
 
-- **GEMM-FP64/** — Double-precision matrix multiplication with multiple kernel implementations
-- **GEMM-TENSOR/** — Experimental tensor-based GEMM implementation
-- _More kernels coming soon..._
+### GEMM-FP32
+
+Single-precision matrix multiplication with optimized CUDA kernels.
+
+### GEMM-FP64
+
+Double-precision matrix multiplication with optimized CUDA kernels.
+
+### GEMM-TENSOR
+
+Tensor Core-based GEMM implementation for high-performance matrix operations.
+
+_More kernels coming soon..._
 
 Each folder is self-contained with its own `Makefile`, source files, and test cases.
 
@@ -19,6 +29,7 @@ Simply copy the kernel folders alongside `gpu_utils.h` in your `polybenchGPU/CUD
 cd /path/to/polybenchGPU/CUDA
 
 # Copy the kernel folders from this repository
+cp -r /path/to/CUDA-WARP-Specialization/GEMM-FP32 .
 cp -r /path/to/CUDA-WARP-Specialization/GEMM-FP64 .
 cp -r /path/to/CUDA-WARP-Specialization/GEMM-TENSOR .
 # Add more kernels as they become available...
@@ -29,13 +40,14 @@ Your directory structure should look like:
 ```text
 polybenchGPU/CUDA/
 ├── gpu_utils.h
+├── GEMM-FP32/
+│   ├── Makefile
+│   └── ...
 ├── GEMM-FP64/
 │   ├── Makefile
-│   ├── main.cpp
-│   ├── drivers/
-│   ├── kernels/
-│   └── test_cases/
+│   └── ...
 ├── GEMM-TENSOR/
+│   ├── Makefile
 │   └── ...
 └── [other kernel folders]/
     └── ...
@@ -50,11 +62,15 @@ Each kernel folder has its own Makefile. Navigate to any kernel folder and run `
 cd GEMM-FP64
 make
 
-# Run with test case 1, kernel 1 (basic implementation)
-./bin/dgemm 1 1
+# Run the executable (check the specific folder's README for usage)
+./gemm_fp64
 
-# Run with test case 1, kernel 2 (2D tiled implementation)
-./bin/dgemm 1 2
+# Example: Build GEMM-TENSOR
+cd GEMM-TENSOR
+make
+
+# Run with specific dataset size
+./gemm_tensor
 ```
 
 The same pattern applies to all kernel implementations in this repository.
