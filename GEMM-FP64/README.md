@@ -18,8 +18,5 @@
 - [x] Add the Epilogue
 - [ ] Overlap Global Memory Reads with Computations
 - [ ] Add Fine-Tuning Script
-  - [ ] Fine-tune for A100's
-- [ ] Add Double Buffering
 - [ ] Basic Warp Specialization (DMA warps load next tile while compute warps process the current tile)
 - [ ] ...More to come...
-
