@@ -5,7 +5,7 @@
 - [x] Implement basic kernel
 - [x] Setup directory structure & Makefile
 - [x] Add CUDA Error Handling
-- [ ] Add 2-D Tiling
+- [x] Add 2-D Tiling
 - [ ] Global Memory Access Optimizations
   - [ ] Batch Global Memory Accesses (Loop Unrolling)
     - [ ] Verify PTX & SASS
