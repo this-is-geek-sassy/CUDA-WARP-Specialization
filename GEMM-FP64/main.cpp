@@ -167,10 +167,11 @@ int main(int argc, char* argv[]) {
   double* hC = (double*) malloc(M * N * sizeof(double));
 
   // Call the requested kernel.
+  bool success = true;
   switch(kernel_no) {
     case 1:
-      dgemm_basic_driver(M, N, K, hA.ptr, hB.ptr, hC);
-      verify(M, N, hP.ptr, hC);
+      success = dgemm_basic_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(M, N, hP.ptr, hC);
       break;
     default:
       std::cerr << "ERROR: Invalid kernel requested!" << std::endl;
@@ -182,6 +183,6 @@ int main(int argc, char* argv[]) {
   free(hB.ptr);
   free(hP.ptr);
   free(hC);
-  
-  return 0;
+    
+  return success;
 }
