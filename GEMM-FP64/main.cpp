@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include "drivers/dgemm_basic_driver.h"
+#include "drivers/dgemm_2d_tiled_driver.h"
 
 /// @brief Used to store Matrix on the host.
 /// @param m Number of rows of the matrix.
@@ -171,6 +172,10 @@ int main(int argc, char* argv[]) {
   switch(kernel_no) {
     case 1:
       success = dgemm_basic_driver(M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(M, N, hP.ptr, hC);
+      break;
+    case 2:
+      success = dgemm_2d_tiled_driver(M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     default:
