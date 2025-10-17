@@ -2,6 +2,7 @@
 
 ## To-Do
 
+- [ ] Setup directory structure
 - [ ] Implement basic kernel
 - [ ] Add templating for compile time parameters
 - [ ] Add 2-D Tiling
