@@ -39,8 +39,8 @@ __global__ void dgemm_gmem_optm(double alpha, double beta, int M, int N, int K, 
   for(unsigned int bk = 0; bk < K; bk += BK) {
     double* gA = A + (bm * K + bk);
     double* gB = B + (bk * N + bn);
-    loadTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
-    loadTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
+    readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
+    readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
     __syncthreads();
 
     for(int k = 0; k < BK; k++)
