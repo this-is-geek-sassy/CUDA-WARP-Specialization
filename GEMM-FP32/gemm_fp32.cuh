@@ -6,14 +6,44 @@
 #define GEMM_FP32_CUH
 
 /* Default to STANDARD_DATASET. */
-# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET)
+# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET) && !defined(HUGE_DATASET)
 #  define STANDARD_DATASET
 # endif
 
 /* Do not define anything if the user manually defines the size. */
 # if !defined(N)
 /* Define the possible dataset sizes. */
+#  ifdef MINI_DATASET
+#define NI 512
+#define NJ 512
+#define NK 512
+#  endif
+
+#  ifdef SMALL_DATASET
+#define NI 512
+#define NJ 512
+#define NK 512
+#  endif
+
 #  ifdef STANDARD_DATASET /* Default if unspecified. */
+#define NI 512
+#define NJ 512
+#define NK 512
+#  endif
+
+#  ifdef LARGE_DATASET
+#define NI 1024
+#define NJ 1024
+#define NK 1024
+#  endif
+
+#  ifdef EXTRALARGE_DATASET
+#define NI 2048
+#define NJ 2048
+#define NK 2048
+#  endif
+
+#  ifdef HUGE_DATASET
 #define NI 4096
 #define NJ 4096
 #define NK 4096
