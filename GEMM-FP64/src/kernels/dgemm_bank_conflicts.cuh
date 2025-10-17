@@ -29,13 +29,16 @@ __global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, in
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
 
+  constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
+  constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
+
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
 
   double a_reg[TM][TK];
   double b_reg[TK][TN];
   double acc_reg[TM][TN];
-  for(int i = 0; i < TM; i++) 
+  for(int i = 0; i < TM; i++)
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
@@ -49,8 +52,8 @@ __global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, in
     for(int wk = 0; wk < BK; wk += TK) {
       // Tiled loads into Register Memory (Need to check PTX and SASS to confirm unrolling and chunking)
       for(int k = 0; k < TK; k++) {
-        for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty * TM + i) * BK + wk + k];
-        for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + tx * TN + j];
+        for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * BDM) * BK + (wk + k)];
+        for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + (tx + j * BDN)];
       }
   
       // FMA operations on Register Memory (Need to check PTX and SASS to confirm unrolling)
@@ -64,7 +67,7 @@ __global__ void dgemm_bank_conflicts(double alpha, double beta, int M, int N, in
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
-      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
+      C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
     }
   }
 }
