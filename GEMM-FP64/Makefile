@@ -11,7 +11,7 @@ NVCCFLAGS := -I. -O3 -arch=sm_75 --ptxas-options=-v
 LDFLAGS :=
 
 # Name of the final executable
-TARGET := dgemm
+TARGET := dgemm.o
 
 # --- Automatic File Discovery ---
 # Find all .cpp and .cu files in the project directories
