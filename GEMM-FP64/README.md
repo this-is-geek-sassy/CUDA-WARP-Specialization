@@ -17,7 +17,7 @@
 - [ ] Add Fine-Tuning Script
   - [ ] Fine-tune for A100's
 - [ ] Add Double Buffering
-- [ ] Add the Epilogue ()
+- [ ] Add the Epilogue
 - [ ] Basic Warp Specialization (DMA warps load next tile while compute warps process the current tile)
 - [ ] ...More to come...
 

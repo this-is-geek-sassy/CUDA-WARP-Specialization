@@ -1,25 +1,28 @@
 # Compiler
 NVCC := nvcc
 
+# Build Directory
+BUILD_DIR := bin
+
 # Compiler flags
 # -I. allows includes like "drivers/basic_dgemm_driver.h"
 # -O3 is for optimization
 # -arch=sm_XX should be set to your GPU's compute capability (e.g., sm_75 for Turing)
-NVCCFLAGS := -I. -O3 -arch=sm_75 --ptxas-options=-v
+NVCCFLAGS := -I. -O3 --ptxas-options=-v
 
 # Linker flags (add libraries here if needed, e.g., -lcublas)
 LDFLAGS :=
 
-# Name of the final executable
-TARGET := dgemm.o
+# Name of the final executable, placed in the build directory
+TARGET := $(BUILD_DIR)/dgemm
 
 # --- Automatic File Discovery ---
 # Find all .cpp and .cu files in the project directories
 SOURCES := $(wildcard *.cpp) $(wildcard drivers/*.cu)
 
-# Generate object file names from source file names
-# e.g., drivers/dgemm.cu -> drivers/dgemm.o
-OBJECTS := $(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$(SOURCES)))
+# Generate object file names and map them to the build directory
+# e.g., drivers/dgemm.cu -> bin/drivers/dgemm.o
+OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(patsubst %.cu,$(BUILD_DIR)/%.o,$(SOURCES)))
 
 # --- Build Rules ---
 
@@ -32,23 +35,25 @@ $(TARGET): $(OBJECTS)
 	$(NVCC) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
 	@echo "Build complete: $(TARGET)"
 
-# Rule to compile CUDA (.cu) and C++ (.cpp) source files into object files (.o)
-# The '-c' flag means compile only, do not link.
-# '$<' is the source file name, '$@' is the target file name.
-%.o: %.cu
-	@echo "Compiling CUDA: $<"
+# Rule to compile CUDA (.cu) source files into object files (.o) in the BUILD_DIR
+# It automatically creates subdirectories within bin as needed (e.g., bin/drivers)
+$(BUILD_DIR)/%.o: %.cu
+	@echo "Compiling CUDA: $< -> $@"
+	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-%.o: %.cpp
-	@echo "Compiling C++: $<"
+# Rule to compile C++ (.cpp) source files into object files (.o) in the BUILD_DIR
+$(BUILD_DIR)/%.o: %.cpp
+	@echo "Compiling C++: $< -> $@"
+	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 # --- Utility Rules ---
 
-# Rule to clean up build files
+# Rule to clean up build files by removing the entire build directory
 clean:
 	@echo "--- Cleaning up ---"
-	rm -f $(TARGET) $(OBJECTS)
+	rm -rf $(BUILD_DIR)
 
 # Phony targets are not files
 .PHONY: all clean
