@@ -17,6 +17,8 @@
   - [x] Resolve Bank Conflicts
 - [x] Add the Epilogue
 - [ ] Overlap Global Memory Reads with Computations
+  - [x] Implement overlapping
+  - [ ] Find the bug causing illegal shared memory access.
 - [ ] Add Fine-Tuning Script
 - [ ] Basic Warp Specialization (DMA warps load next tile while compute warps process the current tile)
 - [ ] ...More to come...
