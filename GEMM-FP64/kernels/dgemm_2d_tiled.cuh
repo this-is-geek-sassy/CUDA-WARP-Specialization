@@ -32,6 +32,8 @@ __device__ void loadTile(const unsigned int N, double* src, double* dest) {
 /// @param BN Tile Size Dimension (compile-time constant)
 /// @param TM Work per thread across m-dimension (compile-time constant)
 /// @param TN Work per thread across n-dimension (compile-time constant)
+/// @param alpha DGEMM parameter
+/// @param beta DGEMM parameter
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
@@ -39,7 +41,7 @@ __device__ void loadTile(const unsigned int N, double* src, double* dest) {
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN>
-__global__ void dgemm_2d_tiled(int M, int N, int K, double* A, double* B, double* C) {
+__global__ void dgemm_2d_tiled(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
   extern __shared__ double sm[];
   double* sA = &sm[0];
   double* sB = &sm[BM * BK];
@@ -71,7 +73,7 @@ __global__ void dgemm_2d_tiled(int M, int N, int K, double* A, double* B, double
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
-      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = acc_reg[i][j];
+      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
     }
   }
 }

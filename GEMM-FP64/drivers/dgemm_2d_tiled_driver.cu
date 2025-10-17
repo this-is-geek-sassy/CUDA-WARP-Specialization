@@ -15,13 +15,15 @@
     })
 
 /// @brief Driver for 2D-Tiled DGEMM Kernel
+/// @param alpha DGEMM parameter
+/// @param beta DGEMM parameter
 /// @param M Number of rows in A
 /// @param N Number of cols in B
 /// @param K Number of cols in A and number of rows in B
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_2d_tiled_driver(int M, int N, int K, double* hA, double* hB, double* hC) {
+bool dgemm_2d_tiled_driver(double alpha, double beta, int M, int N, int K, double* hA, double* hB, double* hC) {
   const unsigned int BM = 64;
   const unsigned int BK = 16;
   const unsigned int BN = 64;
@@ -41,7 +43,7 @@ bool dgemm_2d_tiled_driver(int M, int N, int K, double* hA, double* hB, double* 
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
 
   std::cout << "DRIVER: Launching 2D-Tiled Kernel..." << std::endl;
-  dgemm_2d_tiled<BM, BK, BN, TM, TN><<<gridDim, blockDim, sharedMemSize>>>(M, N, K, dA, dB, dC);
+  dgemm_2d_tiled<BM, BK, BN, TM, TN><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;

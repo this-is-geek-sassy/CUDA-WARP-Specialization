@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-bool dgemm_basic_driver(int M, int N, int K, double* hA, double* hB, double* hC);
+bool dgemm_basic_driver(double alpha, double beta, int M, int N, int K, double* hA, double* hB, double* hC);
 
 #ifdef __cplusplus
 }
