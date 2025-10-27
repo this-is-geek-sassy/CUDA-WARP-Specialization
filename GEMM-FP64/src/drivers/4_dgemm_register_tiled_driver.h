@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-bool dgemm_register_tiled_driver(double alpha, double beta, int M, int N, int K, double* hA, double* hB, double* hC);
+bool dgemm_register_tiled_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC);
 
 #ifdef __cplusplus
 }

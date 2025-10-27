@@ -1,12 +1,13 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
-#include "drivers/dgemm_basic_driver.h"
-#include "drivers/dgemm_2d_tiled_driver.h"
-#include "drivers/dgemm_gmem_optm_driver.h"
-#include "drivers/dgemm_register_tiled_driver.h"
-#include "drivers/dgemm_bank_conflicts_driver.h" 
-#include "drivers/dgemm_overlapped_driver.h" 
+#include "drivers/1_dgemm_basic_driver.h"
+#include "drivers/2_dgemm_2d_tiled_driver.h"
+#include "drivers/3_dgemm_gmem_optm_driver.h"
+#include "drivers/4_dgemm_register_tiled_driver.h"
+#include "drivers/5_dgemm_bank_conflicts_driver.h" 
+#include "drivers/6a_dgemm_overlapped_driver.h" 
+#include "drivers/6b_dgemm_double_buffered_driver.h" 
 
 /// @brief Used to store Matrix on the host.
 /// @param m Number of rows of the matrix.
@@ -15,7 +16,7 @@
 struct Matrix {
   int m;
   int n;
-  double* ptr;
+  float* ptr;
 };
 
 /// @brief Loads the matrix stored in <fileName>.csv
@@ -62,7 +63,7 @@ Matrix inputMatrix(std::string fileName) {
   file.open(fileName);
 
   //// Allocate space in memory for the matrix.
-  double* arr = (double*) malloc(m * n * sizeof(double));
+  float* arr = (float*) malloc(m * n * sizeof(float));
 
   //// Keep track of the current row and column in i and j, respectively.
   int i = 0, j = 0;
@@ -91,7 +92,7 @@ Matrix inputMatrix(std::string fileName) {
 /// @param N Number of columns of the matrices.
 /// @param hP Pointer to the first matrix.
 /// @param hC Pointer to the second matrix.
-bool verify(int M, int N, double* hP, double* hC) {
+bool verify(int M, int N, float* hP, float* hC) {
   bool flag = false;
   for(int i = 0; i < M; i++) {
     for(int j = 0; j < N; j++) {
@@ -112,7 +113,7 @@ bool verify(int M, int N, double* hP, double* hC) {
 /// @param M Number of rows.
 /// @param N Number of columns.
 /// @param A Pointer to the matrix.
-void print(int M, int N, double* A) {
+void print(int M, int N, float* A) {
   for(int i = 0; i < M; i++) {
     for(int j = 0; j < N; j++) {
       std::cout << A[i * N + j] << " ";
@@ -167,11 +168,11 @@ int main(int argc, char* argv[]) {
   int M = hA.m;
   int K = hA.n;
   int N = hB.n;
-  double alpha = 1.0;
-  double beta = 0.0;
+  float alpha = 1.0;
+  float beta = 0.0;
 
   // Allocate memory for product matrix.
-  double* hC = (double*) malloc(M * N * sizeof(double));
+  float* hC = (float*) malloc(M * N * sizeof(float));
 
   // Call the requested kernel.
   bool success = true;
@@ -198,6 +199,10 @@ int main(int argc, char* argv[]) {
       break;
     case 6:
       success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(M, N, hP.ptr, hC);
+      break;
+    case 7:
+      success = dgemm_double_buffered_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(M, N, hP.ptr, hC);
       break;
     default:
