@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/dgemm_bank_conflicts_driver.h" 
-#include "kernels/dgemm_bank_conflicts.cuh"
+#include "drivers/6a_dgemm_overlapped_driver.h" 
+#include "kernels/6a_dgemm_overlapped.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,7 +23,7 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_bank_conflicts_driver(double alpha, double beta, int M, int N, int K, double* hA, double* hB, double* hC) {
+bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
   const unsigned int BM = 64;
   const unsigned int BK = 16;
   const unsigned int BN = 64;
@@ -34,25 +34,25 @@ bool dgemm_bank_conflicts_driver(double alpha, double beta, int M, int N, int K,
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * sizeof(double);
+  const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
 
-  double *dA = nullptr, *dB = nullptr, *dC = nullptr;
-  if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(double)))) goto cleanup;
-  if(!CUDA_CHECK(cudaMalloc(&dB, K * N * sizeof(double)))) goto cleanup;
-  if(!CUDA_CHECK(cudaMalloc(&dC, M * N * sizeof(double)))) goto cleanup;
+  float *dA = nullptr, *dB = nullptr, *dC = nullptr;
+  if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
+  if(!CUDA_CHECK(cudaMalloc(&dB, K * N * sizeof(float)))) goto cleanup;
+  if(!CUDA_CHECK(cudaMalloc(&dC, M * N * sizeof(float)))) goto cleanup;
 
-  if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
-  if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
-  if(!CUDA_CHECK(cudaMemcpy(dC, hC, M * N * sizeof(double), cudaMemcpyHostToDevice))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(dA, hA, M * K * sizeof(float), cudaMemcpyHostToDevice))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(float), cudaMemcpyHostToDevice))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(dC, hC, M * N * sizeof(float), cudaMemcpyHostToDevice))) goto cleanup;
 
   std::cout << "DRIVER: Launching Bank Conflicts Free Kernel..." << std::endl;
-  dgemm_bank_conflicts<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_overlapped<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;
   std::cout << "DRIVER: Kernel finished successfully." << std::endl;
 
-  if(!CUDA_CHECK(cudaMemcpy(hC, dC, M * N * sizeof(double), cudaMemcpyDeviceToHost))) goto cleanup;
+  if(!CUDA_CHECK(cudaMemcpy(hC, dC, M * N * sizeof(float), cudaMemcpyDeviceToHost))) goto cleanup;
 
   cleanup:
   if(dA) cudaFree(dA);

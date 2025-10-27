@@ -11,7 +11,7 @@
 /// @param src Pointer to src
 /// @param dest Pointer to dest
 template<unsigned int BM, unsigned int BN>
-__device__ void loadTile(const unsigned int N, double* src, double* dest) {
+__device__ void loadTile(const unsigned int N, float* src, float* dest) {
   const unsigned int NUM_THREADS = blockDim.x * blockDim.y;
 
   assert(NUM_THREADS % BN == 0);
@@ -41,10 +41,10 @@ __device__ void loadTile(const unsigned int N, double* src, double* dest) {
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN>
-__global__ void dgemm_2d_tiled(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
-  extern __shared__ double sm[];
-  double* sA = &sm[0];
-  double* sB = &sm[BM * BK];
+__global__ void dgemm_2d_tiled(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
+  extern __shared__ float sm[];
+  float* sA = &sm[0];
+  float* sB = &sm[BM * BK];
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
@@ -52,14 +52,14 @@ __global__ void dgemm_2d_tiled(double alpha, double beta, int M, int N, int K, d
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
 
-  double acc_reg[TM][TN];
+  float acc_reg[TM][TN];
   for(int i = 0; i < TM; i++) 
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
   for(unsigned int bk = 0; bk < K; bk += BK) {
-    double* gA = A + (bm * K + bk);
-    double* gB = B + (bk * N + bn);
+    float* gA = A + (bm * K + bk);
+    float* gB = B + (bk * N + bn);
     loadTile<BM, BK>(K, gA, sA);
     loadTile<BK, BN>(N, gB, sB);
     __syncthreads();

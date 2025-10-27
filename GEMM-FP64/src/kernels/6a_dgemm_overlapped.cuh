@@ -21,10 +21,10 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
-__global__ void dgemm_overlapped(double alpha, double beta, int M, int N, int K, double* A, double* B, double* C) {
-  extern __shared__ double sm[];
-  double* sA = &sm[0];
-  double* sB = &sm[BM * BK];
+__global__ void dgemm_overlapped(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
+  extern __shared__ float sm[];
+  float* sA = &sm[0];
+  float* sB = &sm[BM * BK];
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
@@ -35,9 +35,9 @@ __global__ void dgemm_overlapped(double alpha, double beta, int M, int N, int K,
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
 
-  double a_reg[TM][TK];
-  double b_reg[TK][TN];
-  double acc_reg[TM][TN];
+  float a_reg[TM][TK];
+  float b_reg[TK][TN];
+  float acc_reg[TM][TN];
   for(int i = 0; i < TM; i++)
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
@@ -50,8 +50,8 @@ __global__ void dgemm_overlapped(double alpha, double beta, int M, int N, int K,
   float4 sB_reg[NUM_ITERS];
 
   // Load first tile.
-  double* gA = A + (bm * K);
-  double* gB = B + bn;
+  float* gA = A + (bm * K);
+  float* gB = B + bn;
   readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
   readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
   __syncthreads();
