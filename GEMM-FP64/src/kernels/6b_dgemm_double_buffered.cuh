@@ -1,5 +1,5 @@
-#ifndef DGEMM_BANK_CONFLICTS_CUH
-#define DGEMM_BANK_CONFLICTS_CUH
+#ifndef DGEMM_DOUBLE_BUFFERED_CUH
+#define DGEMM_DOUBLE_BUFFERED_CUH
 
 #include <cuda.h>
 #include <cassert>
@@ -107,4 +107,4 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
   }
 }
 
-#endif // DGEMM_BANK_CONFLICTS_CUH
+#endif // DGEMM_DOUBLE_BUFFERED_CUH
