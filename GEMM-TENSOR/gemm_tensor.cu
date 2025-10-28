@@ -23,12 +23,22 @@ using namespace nvcuda;
 #include "../gpu_utils.h"
 
 // For FP16 tensor cores, compare at FP16 precision level
-#define PERCENT_DIFF_ERROR_THRESHOLD 0.15
+#define PERCENT_DIFF_ERROR_THRESHOLD 0.05
 
 #define ALPHA 1.7f
 #define BETA 0.9f
 
 #define RUN_ON_CPU
+
+// ============================================================================
+// WARP SPECIALIZATION CONFIGURATION
+// ============================================================================
+// Block: 512 threads (dim3(128,4)) → 512÷32 = 16 warps → 4×4 grid for 64×64 tile
+// ============================================================================
+#define NUM_LOAD_WARPS 4      // Warps 0-3: Load data only
+#define NUM_COMPUTE_WARPS 12  // Warps 4-15: Compute only
+#define TOTAL_WARPS 16        // Fixed: Must equal NUM_LOAD_WARPS + NUM_COMPUTE_WARPS
+// ============================================================================
 
 
 void gemm(int ni, int nj, int nk, float alpha, float beta, float* A, float* B, float* C)
@@ -150,103 +160,163 @@ void compareResults(int ni, int nj, float* C, half* C_outputFromGpu)
 	       avg_diff, max_diff, valid_comparisons);
 }
 
+// ============================================================================
+// WARP SPECIALIZED KERNEL: Separate load and compute warps with double buffering
+// ============================================================================
 __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
                                   const half* A, const half* B, half* C)
 {
 	using namespace nvcuda::wmma;
 	
-	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K];
-	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N];
+	__shared__ half shared_A[2][BLOCK_SIZE_M][BLOCK_SIZE_K];
+	__shared__ half shared_B[2][BLOCK_SIZE_K][BLOCK_SIZE_N];
 	
-	int warp_m = (threadIdx.x / warpSize);
-	int warp_n = threadIdx.y;
+	int warp_id = (threadIdx.y * (blockDim.x / warpSize)) + (threadIdx.x / warpSize);
+	int lane_id = threadIdx.x % warpSize;
+	bool is_load_warp = (warp_id < NUM_LOAD_WARPS);
 	
 	int block_m = blockIdx.x;
 	int block_n = blockIdx.y;
+	int num_tiles = (K + BLOCK_SIZE_K - 1) / BLOCK_SIZE_K;
 	
-	int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
-	int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
-	
-	int row_start = global_warp_m * WMMA_M;
-	int col_start = global_warp_n * WMMA_N;
-	
-	fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
-	fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
-	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> acc;
-	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c;
-	
-	fill_fragment(acc, __float2half(0.0f));
-	
-	// Tile across K dimension
-	for (int k_tile = 0; k_tile < K; k_tile += BLOCK_SIZE_K) {
-		// Cooperative loading of A tile into shared memory
-		int num_threads = blockDim.x * blockDim.y;
-		int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
-		int tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
+	if (is_load_warp) {
+		// ===== LOAD WARPS: Load data into shared memory =====
+		int num_load_threads = NUM_LOAD_WARPS * warpSize;
+		int load_thread_id = warp_id * warpSize + lane_id;
 		
-		for (int i = thread_id; i < tile_size; i += num_threads) {
-			int row = i / BLOCK_SIZE_K;
-			int col = i % BLOCK_SIZE_K;
-			int global_row = block_m * BLOCK_SIZE_M + row;
-			int global_col = k_tile + col;
+		for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+			int k_tile = tile_idx * BLOCK_SIZE_K;
+			int buffer_idx = tile_idx % 2;
 			
-			if (global_row < M && global_col < K) {
-				shared_A[row][col] = A[global_row * K + global_col];
-			} else {
-				shared_A[row][col] = __float2half(0.0f);
-			}
-		}
-		
-		// Cooperative loading of B tile into shared memory
-		tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
-		for (int i = thread_id; i < tile_size; i += num_threads) {
-			int row = i / BLOCK_SIZE_N;
-			int col = i % BLOCK_SIZE_N;
-			int global_row = k_tile + row;
-			int global_col = block_n * BLOCK_SIZE_N + col;
-			
-			if (global_row < K && global_col < N) {
-				shared_B[row][col] = B[global_row * N + global_col];
-			} else {
-				shared_B[row][col] = __float2half(0.0f);
-			}
-		}
-		
-		__syncthreads();
-		
-		// Compute using shared memory
-		for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
-			int smem_a_row = warp_m * WMMA_M;
-			int smem_a_col = k_step;
-			
-			int smem_b_row = k_step;
-			int smem_b_col = warp_n * WMMA_N;
-			
-			if (row_start < M && col_start < N && 
-			    (k_tile + k_step) < K) {
-				load_matrix_sync(frag_a, &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K);
-				load_matrix_sync(frag_b, &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N);
+			// Load A tile
+			int tile_size_A = BLOCK_SIZE_M * BLOCK_SIZE_K;
+			for (int i = load_thread_id; i < tile_size_A; i += num_load_threads) {
+				int row = i / BLOCK_SIZE_K;
+				int col = i % BLOCK_SIZE_K;
+				int global_row = block_m * BLOCK_SIZE_M + row;
+				int global_col = k_tile + col;
 				
-				mma_sync(acc, frag_a, frag_b, acc);
+				if (global_row < M && global_col < K) {
+					shared_A[buffer_idx][row][col] = A[global_row * K + global_col];
+				} else {
+					shared_A[buffer_idx][row][col] = __float2half(0.0f);
+				}
+			}
+			
+			// Load B tile
+			int tile_size_B = BLOCK_SIZE_K * BLOCK_SIZE_N;
+			for (int i = load_thread_id; i < tile_size_B; i += num_load_threads) {
+				int row = i / BLOCK_SIZE_N;
+				int col = i % BLOCK_SIZE_N;
+				int global_row = k_tile + row;
+				int global_col = block_n * BLOCK_SIZE_N + col;
+				
+				if (global_row < K && global_col < N) {
+					shared_B[buffer_idx][row][col] = B[global_row * N + global_col];
+				} else {
+					shared_B[buffer_idx][row][col] = __float2half(0.0f);
+				}
+			}
+			
+			// Sync: load warps done loading, compute warps can start
+			__syncthreads();
+		}
+		
+	} else {
+		// ===== COMPUTE WARPS: Compute using data from shared memory =====
+		// We have 12 compute warps (warp_id 4-15) that need to cover 4×4 = 16 positions
+		// Map: warp 4→pos 0, warp 5→pos 1, ..., warp 15→pos 11
+		// Positions 12-15 will be computed by extending the mapping
+		int compute_warp_local_id = warp_id - NUM_LOAD_WARPS;  // 0 to 11
+		
+		// We need to compute all 16 tiles (4×4). With 12 warps, some will compute multiple tiles
+		// Simple approach: each warp computes its position, warps 0-3 compute an extra tile
+		int positions_per_warp = (compute_warp_local_id < 4) ? 2 : 1;
+		int start_pos = (compute_warp_local_id < 4) ? 
+		                 compute_warp_local_id * 2 : 
+		                 8 + (compute_warp_local_id - 4);
+		
+		fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
+		fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
+		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc[2];  // Max 2 tiles per warp
+		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c;
+		
+		for (int p = 0; p < positions_per_warp; p++) {
+			fill_fragment(acc[p], 0.0f);
+		}
+		
+		for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+			int k_tile = tile_idx * BLOCK_SIZE_K;
+			int buffer_idx = tile_idx % 2;
+			
+			// Sync: wait for load warps to finish loading
+			__syncthreads();
+			
+			// Compute with current buffer - each warp may handle 1 or 2 positions
+			for (int p = 0; p < positions_per_warp; p++) {
+				int pos = start_pos + p;
+				int warp_m = pos / 4;  // Row in 4×4 grid
+				int warp_n = pos % 4;  // Col in 4×4 grid
+				
+				int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
+				int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
+				
+				int row_start = global_warp_m * WMMA_M;
+				int col_start = global_warp_n * WMMA_N;
+				
+				for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
+					int smem_a_row = warp_m * WMMA_M;
+					int smem_a_col = k_step;
+					int smem_b_row = k_step;
+					int smem_b_col = warp_n * WMMA_N;
+					
+					if (row_start < M && col_start < N && (k_tile + k_step) < K) {
+						load_matrix_sync(frag_a, &shared_A[buffer_idx][smem_a_row][smem_a_col], BLOCK_SIZE_K);
+						load_matrix_sync(frag_b, &shared_B[buffer_idx][smem_b_row][smem_b_col], BLOCK_SIZE_N);
+						mma_sync(acc[p], frag_a, frag_b, acc[p]);
+					}
+				}
 			}
 		}
 		
-		__syncthreads();
-	}
-	
-	if (row_start < M && col_start < N) {
-		load_matrix_sync(frag_c, C + row_start * N + col_start, N, mem_row_major);
-		
-		for (int idx = 0; idx < frag_c.num_elements; idx++) {
-			frag_c.x[idx] = __hmul(frag_c.x[idx], beta);
+		// Write results - each warp writes its tile(s)
+		for (int p = 0; p < positions_per_warp; p++) {
+			int pos = start_pos + p;
+			int warp_m = pos / 4;
+			int warp_n = pos % 4;
+			
+			int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
+			int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
+			
+			int row_start = global_warp_m * WMMA_M;
+			int col_start = global_warp_n * WMMA_N;
+			
+			if (row_start < M && col_start < N) {
+				fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c_half;
+				load_matrix_sync(frag_c_half, C + row_start * N + col_start, N, mem_row_major);
+				
+				#pragma unroll
+				for (int idx = 0; idx < frag_c_half.num_elements; idx++) {
+					frag_c.x[idx] = __half2float(frag_c_half.x[idx]);
+				}
+				
+				float alpha_f = __half2float(alpha);
+				float beta_f = __half2float(beta);
+				
+				#pragma unroll
+				for (int idx = 0; idx < acc[p].num_elements; idx++) {
+					acc[p].x[idx] = fmaf(acc[p].x[idx], alpha_f, frag_c.x[idx] * beta_f);
+				}
+				
+				fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> acc_half;
+				#pragma unroll
+				for (int idx = 0; idx < acc[p].num_elements; idx++) {
+					acc_half.x[idx] = __float2half(acc[p].x[idx]);
+				}
+				
+				store_matrix_sync(C + row_start * N + col_start, acc_half, N, mem_row_major);
+			}
 		}
-		
-		for (int idx = 0; idx < acc.num_elements; idx++) {
-			acc.x[idx] = __hmul(acc.x[idx], alpha);
-			acc.x[idx] = __hadd(acc.x[idx], frag_c.x[idx]);
-		}
-		
-		store_matrix_sync(C + row_start * N + col_start, acc, N, mem_row_major);
 	}
 }
 
