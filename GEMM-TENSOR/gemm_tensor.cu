@@ -30,15 +30,11 @@ using namespace nvcuda;
 
 #define RUN_ON_CPU
 
-// ============================================================================
-// WARP SPECIALIZATION CONFIGURATION
-// ============================================================================
-// Block: 512 threads (dim3(128,4)) → 512÷32 = 16 warps → 4×4 grid for 64×64 tile
-// ============================================================================
-#define NUM_LOAD_WARPS 4      // Warps 0-3: Load data only
-#define NUM_COMPUTE_WARPS 12  // Warps 4-15: Compute only
+
+#define NUM_LOAD_WARPS 4      // Warps 0-1: Load data only
+#define NUM_COMPUTE_WARPS 12  // Warps 2-15: Compute only
 #define TOTAL_WARPS 16        // Fixed: Must equal NUM_LOAD_WARPS + NUM_COMPUTE_WARPS
-// ============================================================================
+
 
 
 void gemm(int ni, int nj, int nk, float alpha, float beta, float* A, float* B, float* C)
@@ -160,9 +156,7 @@ void compareResults(int ni, int nj, float* C, half* C_outputFromGpu)
 	       avg_diff, max_diff, valid_comparisons);
 }
 
-// ============================================================================
 // WARP SPECIALIZED KERNEL: Separate load and compute warps with double buffering
-// ============================================================================
 __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
                                   const half* A, const half* B, half* C)
 {
@@ -180,7 +174,6 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 	int num_tiles = (K + BLOCK_SIZE_K - 1) / BLOCK_SIZE_K;
 	
 	if (is_load_warp) {
-		// ===== LOAD WARPS: Load data into shared memory =====
 		int num_load_threads = NUM_LOAD_WARPS * warpSize;
 		int load_thread_id = warp_id * warpSize + lane_id;
 		
@@ -223,22 +216,30 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 		}
 		
 	} else {
-		// ===== COMPUTE WARPS: Compute using data from shared memory =====
-		// We have 12 compute warps (warp_id 4-15) that need to cover 4×4 = 16 positions
-		// Map: warp 4→pos 0, warp 5→pos 1, ..., warp 15→pos 11
-		// Positions 12-15 will be computed by extending the mapping
-		int compute_warp_local_id = warp_id - NUM_LOAD_WARPS;  // 0 to 11
+
+
+		int compute_warp_local_id = warp_id - NUM_LOAD_WARPS;  // 0 to (NUM_COMPUTE_WARPS-1)
+		int total_positions = 16;  // 4×4 grid of 16×16 WMMA tiles
+		int positions_per_warp;
+		int start_pos;
 		
-		// We need to compute all 16 tiles (4×4). With 12 warps, some will compute multiple tiles
-		// Simple approach: each warp computes its position, warps 0-3 compute an extra tile
-		int positions_per_warp = (compute_warp_local_id < 4) ? 2 : 1;
-		int start_pos = (compute_warp_local_id < 4) ? 
-		                 compute_warp_local_id * 2 : 
-		                 8 + (compute_warp_local_id - 4);
+		int base_tiles = total_positions / NUM_COMPUTE_WARPS;
+		int extra_tiles = total_positions % NUM_COMPUTE_WARPS;
+		
+		if (compute_warp_local_id < extra_tiles) {
+			// First 'extra_tiles' warps get one more tile
+			positions_per_warp = base_tiles + 1;
+			start_pos = compute_warp_local_id * positions_per_warp;
+		} else {
+			// Remaining warps get base number of tiles
+			positions_per_warp = base_tiles;
+			start_pos = extra_tiles * (base_tiles + 1) + 
+			            (compute_warp_local_id - extra_tiles) * base_tiles;
+		}
 		
 		fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
 		fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
-		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc[2];  // Max 2 tiles per warp
+		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc[3];  // Max 3 tiles per warp (e.g., 6 compute warps)
 		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c;
 		
 		for (int p = 0; p < positions_per_warp; p++) {
