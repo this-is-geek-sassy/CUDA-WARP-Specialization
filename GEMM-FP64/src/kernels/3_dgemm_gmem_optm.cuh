@@ -52,7 +52,7 @@ __global__ void dgemm_gmem_optm(float alpha, float beta, int M, int N, int K, fl
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
-      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = acc_reg[i][j];
+      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
     }
   }
 }
