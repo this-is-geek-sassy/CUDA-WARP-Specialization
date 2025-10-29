@@ -24,9 +24,13 @@ template<unsigned int BM, unsigned int BK, unsigned int BN,
          unsigned int TM, unsigned int TN, unsigned int TK,
          unsigned int NUM_LOAD_WARPS, unsigned int WARP_SIZE>
 __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
+  constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
+  constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
+
   extern __shared__ float sm[];
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
+  float* sC[2] = {&sm[2 * (BM * BK + BK * BN)], &sm[2 * (BM * BK + BK * BN) + BDM * BDN]};
 
   constexpr unsigned int NUM_LOAD_THREADS = NUM_LOAD_WARPS * WARP_SIZE; 
 
@@ -42,15 +46,16 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
     int buf = 0;
     float* gA = A + bm * K;
     float* gB = B + bn;
+    float* gC = C + bm * N + bn;
 
     // Load the first tile.
     readTileChunked<BM, BK, NUM_LOAD_THREADS>(K, gA, sA[buf]);
     readTileChunked<BK, BN, NUM_LOAD_THREADS>(N, gB, sB[buf]);
 
     // Update pointers to next tile.
-    buf = 1 - buf;
     gA += BK;
     gB += BK * N;
+    buf = 1 - buf; // Swap buffers.
 
     __syncthreads(); // Sync with the compute warps.
 
@@ -68,12 +73,24 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
 
       __syncthreads(); // Sync with the compute warps.
     }
+
+    for(int i = 0; i < TM; i++) {
+      for(int j = 0; j < TN; j++) {
+        // Load next tile from C.
+        readTileBatched<BDM, BDN, NUM_LOAD_THREADS>(N, gC, sC[buf]);
+
+        gC += BDN;
+        buf = 1 - buf; // Swap buffers.
+
+        __syncthreads(); // Sync with the compute warps.
+      }
+
+      gC -= BN;
+      gC += BDM * N;
+    }
   }
   else {
     //// COMPUTE WARPS
-    constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
-    constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
-
     tId -= NUM_LOAD_THREADS;
     const unsigned int tx = tId % BDN;
     const unsigned int ty = tId / BDN;
@@ -109,7 +126,9 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
 
     for(int i = 0; i < TM; i++) {
       for(int j = 0; j < TN; j++) {
-        C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
+        __syncthreads(); // Sync with load warps.
+        C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * sC[mem][ty * BDN + tx];
+        mem = 1 - mem; // Swap buffers.
       }
     }
   }

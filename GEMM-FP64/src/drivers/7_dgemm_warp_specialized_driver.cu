@@ -24,20 +24,22 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 64;
+  const unsigned int BM = 128;
   const unsigned int BK = 16;
-  const unsigned int BN = 64;
-  const unsigned int TM = 4;
-  const unsigned int TN = 4;
-  const unsigned int TK = 2;
+  const unsigned int BN = 128;
+  const unsigned int TM = 8;
+  const unsigned int TN = 8;
+  const unsigned int TK = 4;
   const unsigned int WARP_SIZE = 32;
-  const unsigned int NUM_LOAD_WARPS = 4;
+  const unsigned int NUM_LOAD_WARPS = 8;
   const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
-  const unsigned int NUM_COMPUTE_THREADS = (BN/TN) * (BM/TM);
+  const unsigned int BDM = BM/TM;
+  const unsigned int BDN = BN/TN;
+  const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-  const size_t sharedMemSize = 2 * BK * (BM + BN) * sizeof(float);
+  const size_t sharedMemSize = (BDM * BDN + BK * (BM + BN)) * 2 * sizeof(float);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;

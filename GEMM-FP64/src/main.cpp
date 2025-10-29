@@ -93,11 +93,11 @@ Matrix inputMatrix(std::string fileName) {
 /// @param N Number of columns of the matrices.
 /// @param hP Pointer to the first matrix.
 /// @param hC Pointer to the second matrix.
-bool verify(int M, int N, float* hP, float* hC) {
+bool verify(float alpha, float beta, int M, int N, float* hP, float* hC) {
   bool flag = false;
   for(int i = 0; i < M; i++) {
     for(int j = 0; j < N; j++) {
-      if(hC[i * N + j] != hP[i * N + j]) {
+      if(hC[i * N + j] != alpha * hP[i * N + j] + beta) {
         flag = true;
         break;
       }
@@ -170,45 +170,48 @@ int main(int argc, char* argv[]) {
   int K = hA.n;
   int N = hB.n;
   float alpha = 1.0;
-  float beta = 0.0;
+  float beta = 5.0;
 
   // Allocate memory for product matrix.
   float* hC = (float*) malloc(M * N * sizeof(float));
+  for(int i = 0; i < M; i++)
+    for(int j = 0; j < N; j++)
+      hC[i * N + j] = 1.0;
 
   // Call the requested kernel.
   bool success = true;
   switch(kernel_no) {
     case 1:
       success = dgemm_basic_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 2:
       success = dgemm_2d_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 3:
       success = dgemm_gmem_optm_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 4:
       success = dgemm_register_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 5:
       success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 6:
       success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 7:
       success = dgemm_double_buffered_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 8:
       success = dgemm_warp_specialized_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
-      if(success) verify(M, N, hP.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     default:
       std::cerr << "ERROR: Invalid kernel requested!" << std::endl;
