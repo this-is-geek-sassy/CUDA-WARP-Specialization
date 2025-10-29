@@ -98,7 +98,6 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
         for(int k = 0; k < TK; k++)
           acc_reg[i][j] = fma(a_reg[i][k], b_reg[k][j], acc_reg[i][j]);
   }
-  __syncthreads();
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
