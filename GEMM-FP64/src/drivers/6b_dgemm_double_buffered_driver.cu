@@ -45,12 +45,22 @@ bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, 
   if(!CUDA_CHECK(cudaMemcpy(dB, hB, K * N * sizeof(float), cudaMemcpyHostToDevice))) goto cleanup;
   if(!CUDA_CHECK(cudaMemcpy(dC, hC, M * N * sizeof(float), cudaMemcpyHostToDevice))) goto cleanup;
 
+  cudaEvent_t start, stop;
+  float milliseconds;
+  if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
+  if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
+
   std::cout << "DRIVER: Launching Double Buffered Kernel..." << std::endl;
+  if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
   dgemm_double_buffered<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;
   std::cout << "DRIVER: Kernel finished successfully." << std::endl;
+
+  if (!CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop))) goto cleanup;
+  std::cout << "Kernel execution time: " << milliseconds * 1000 << " us" << std::endl;
 
   if(!CUDA_CHECK(cudaMemcpy(hC, dC, M * N * sizeof(float), cudaMemcpyDeviceToHost))) goto cleanup;
 
