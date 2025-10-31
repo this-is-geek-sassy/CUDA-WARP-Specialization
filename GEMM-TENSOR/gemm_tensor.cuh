@@ -11,9 +11,9 @@
 #  define STANDARD_DATASET
 # endif
 
-/* Do not define anything if the user manually defines the size. */
+
 # if !defined(N)
-/* Define the possible dataset sizes. */
+
 #  ifdef MINI_DATASET
 #define NI 512
 #define NJ 512
@@ -26,7 +26,7 @@
 #define NK 512
 #  endif
 
-#  ifdef STANDARD_DATASET /* Default if unspecified. */
+#  ifdef STANDARD_DATASET 
 #define NI 512
 #define NJ 512
 #define NK 512
@@ -49,13 +49,13 @@
 #define NJ 4096
 #define NK 4096
 #  endif
-# endif /* !N */
+# endif 
 
 # define _PB_NI POLYBENCH_LOOP_BOUND(NI,ni)
 # define _PB_NJ POLYBENCH_LOOP_BOUND(NJ,nj)
 # define _PB_NK POLYBENCH_LOOP_BOUND(NK,nk)
 
-/* Use half precision for tensor cores */
+
 # ifndef DATA_TYPE
 #  define DATA_TYPE half
 #  define DATA_PRINTF_MODIFIER "%0.2f "
