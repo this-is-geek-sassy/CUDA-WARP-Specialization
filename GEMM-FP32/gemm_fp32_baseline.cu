@@ -10,9 +10,9 @@
 
 #define POLYBENCH_TIME 1
 
-#include "gemm_fp32.cuh"
-#include "../../common/polybench.h"
-#include "../../common/polybenchUtilFuncts.h"
+#include "gemm_fp32_baseline.cuh"
+#include "./common/polybench.h"
+#include "./common/polybenchUtilFuncts.h"
 
 #define GPU_DEVICE 0
 
@@ -161,10 +161,10 @@ __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t be
 }
 
 void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                   fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-                   fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), 
-                   fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
-                   fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
+                    fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
+                    fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), 
+                    fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
+                    fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
 {
     fp32_t *A_gpu;
     fp32_t *B_gpu;
@@ -256,4 +256,4 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-#include "../../common/polybench.c"
+#include "./common/polybench.c"

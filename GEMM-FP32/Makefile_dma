@@ -1,5 +1,5 @@
-EXECUTABLE := gemm_fp_32_baseline
-CUFILES := gemm_fp32_baseline.cu
+EXECUTABLE := gemm_fp_32_cudadma
+CUFILES := gemm_fp_32_cudaDMA.cu
 
 # Dataset size options:
 # -DMINI_DATASET         512x512
