@@ -6,9 +6,10 @@
 #include "drivers/3_dgemm_gmem_optm_driver.h"
 #include "drivers/4_dgemm_register_tiled_driver.h"
 #include "drivers/5_dgemm_bank_conflicts_driver.h" 
-#include "drivers/6a_dgemm_overlapped_driver.h" 
-#include "drivers/6b_dgemm_double_buffered_driver.h"
-#include "drivers/7_dgemm_warp_specialized_driver.h"
+#include "drivers/6_dgemm_overlapped_driver.h" 
+#include "drivers/7_dgemm_double_buffered_driver.h"
+#include "drivers/8_dgemm_warp_specialized_driver.h"
+#include "drivers/9_dgemm_named_barriers_driver.h"
 
 /// @brief Used to store Matrix on the host.
 /// @param m Number of rows of the matrix.
@@ -211,6 +212,10 @@ int main(int argc, char* argv[]) {
       break;
     case 8:
       success = dgemm_warp_specialized_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      break;
+    case 9:
+      success = dgemm_named_barriers_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     default:

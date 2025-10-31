@@ -1,11 +1,11 @@
-#ifndef DGEMM_DOUBLE_BUFFERED_CUH
-#define DGEMM_DOUBLE_BUFFERED_CUH
+#ifndef DGEMM_OVERLAPPED_CUH
+#define DGEMM_OVERLAPPED_CUH
 
 #include <cuda.h>
 #include <cassert>
 #include "utils/global_mem_utils.cuh"
 
-/// @brief Bank Conflicts Free DGEMM Kernel
+/// @brief Computation Overlapped Global Memory Reads DGEMM Kernel
 /// @param BM Tile Size Dimension (compile-time constant)
 /// @param BK Tile Size Dimension (compile-time constant)
 /// @param BN Tile Size Dimension (compile-time constant)
@@ -21,11 +21,10 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
-__global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
+__global__ void dgemm_overlapped(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
   extern __shared__ float sm[];
-  float* sA[2] = {&sm[0], &sm[BM * BK]};
-  float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
-  int mem = 0, buf = 1;
+  float* sA = &sm[0];
+  float* sB = &sm[BM * BK];
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
@@ -43,31 +42,36 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
-  // Pre-load the first tile.
-  float* gA = A + bm * K;
-  float* gB = B + bn;
-  readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA[mem]);
-  readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB[mem]);
-    __syncthreads();
+  // Allocate registers for loading next iteration's tile.
+  constexpr unsigned int BN_VECTORIZED = BN / 2;
+  constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED; 
+  constexpr unsigned int NUM_ITERS = BM / ROW_STEP;
+  float4 sA_reg[NUM_ITERS];
+  float4 sB_reg[NUM_ITERS];
 
-  // Update pointers to the next tile.
+  // Load first tile.
+  float* gA = A + (bm * K);
+  float* gB = B + bn;
+  readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA);
+  readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB);
+  __syncthreads();
+
+  // Update the global memory indexes to next tile.
   gA += BK;
   gB += BK * N;
-  
-  for(unsigned int bk = BK; bk < K; bk += BK) {
-    // Load the next tile into extra buffers.
-    readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA[buf]);
-    readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB[buf]);
 
-    // Process the current tile.
+  for(unsigned int bk = BK; bk < K; bk += BK) {
+    // Load the next tile from global memory into registers.
+    loadTileChunked<BM, BK, NUM_THREADS, NUM_ITERS>(K, gA, sA_reg);
+    loadTileChunked<BK, BN, NUM_THREADS, NUM_ITERS>(N, gB, sB_reg);
+
+    // Perform computation on current tile.
     for(int wk = 0; wk < BK; wk += TK) {
-      // Tiled loads into Register Memory (Need to check PTX and SASS to confirm unrolling and chunking)
       for(int k = 0; k < TK; k++) {
-        for(int i = 0; i < TM; i++) a_reg[i][k] = sA[mem][(ty + i * BDM) * BK + (wk + k)];
-        for(int j = 0; j < TN; j++) b_reg[k][j] = sB[mem][(wk + k) * BN + (tx + j * BDN)];
+        for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * BDM) * BK + (wk + k)];
+        for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + (tx + j * BDN)];
       }
   
-      // FMA operations on Register Memory (Need to check PTX and SASS to confirm unrolling)
       for(int i = 0; i < TM; i++)
         for(int j = 0; j < TN; j++)
           for(int k = 0; k < TK; k++)
@@ -75,29 +79,29 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
     }
     __syncthreads();
 
-    // Update pointers to next tile.
+    // Update the global memory indexes to next tile.
     gA += BK;
     gB += BK * N;
 
-    // Swap buffers.
-    buf = 1 - buf;
-    mem = 1 - mem;
+    // Store the next tile from registers into shared memory.
+    storeTileChunked<BM, BK, NUM_THREADS, NUM_ITERS>(sA_reg, sA);
+    storeTileChunked<BK, BN, NUM_THREADS, NUM_ITERS>(sB_reg, sB);
+    __syncthreads();
   }
 
-  // Process the last tile.
+  // Perform computation on last tile.
   for(int wk = 0; wk < BK; wk += TK) {
-    // Tiled loads into Register Memory (Need to check PTX and SASS to confirm unrolling and chunking)
     for(int k = 0; k < TK; k++) {
-      for(int i = 0; i < TM; i++) a_reg[i][k] = sA[mem][(ty + i * BDM) * BK + (wk + k)];
-      for(int j = 0; j < TN; j++) b_reg[k][j] = sB[mem][(wk + k) * BN + (tx + j * BDN)];
+      for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * BDM) * BK + (wk + k)];
+      for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + (tx + j * BDN)];
     }
 
-    // FMA operations on Register Memory (Need to check PTX and SASS to confirm unrolling)
     for(int i = 0; i < TM; i++)
       for(int j = 0; j < TN; j++)
         for(int k = 0; k < TK; k++)
           acc_reg[i][j] = fma(a_reg[i][k], b_reg[k][j], acc_reg[i][j]);
   }
+  __syncthreads();
 
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
@@ -106,4 +110,4 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
   }
 }
 
-#endif // DGEMM_DOUBLE_BUFFERED_CUH
+#endif // DGEMM_OVERLAPPED_CUH

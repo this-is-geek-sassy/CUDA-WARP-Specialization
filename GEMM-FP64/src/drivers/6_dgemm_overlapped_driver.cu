@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/6b_dgemm_double_buffered_driver.h" 
-#include "kernels/6b_dgemm_double_buffered.cuh"
+#include "drivers/6_dgemm_overlapped_driver.h" 
+#include "kernels/6_dgemm_overlapped.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,7 +23,7 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
@@ -34,7 +34,7 @@ bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, 
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = 2 * BK * (BM + BN) * sizeof(float);
+  const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -50,9 +50,9 @@ bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, 
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Double Buffered Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching Overlapped Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_double_buffered<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_overlapped<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
