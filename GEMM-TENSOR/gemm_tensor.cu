@@ -22,19 +22,12 @@ using namespace nvcuda;
 
 #include "../gpu_utils.h"
 
-// For FP16 tensor cores, compare at FP16 precision level
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
 
 #define ALPHA 1.7f
 #define BETA 0.9f
 
 #define RUN_ON_CPU
-
-
-#define NUM_LOAD_WARPS 4      // Warps 0-1: Load data only
-#define NUM_COMPUTE_WARPS 12  // Warps 2-15: Compute only
-#define TOTAL_WARPS 16        // Fixed: Must equal NUM_LOAD_WARPS + NUM_COMPUTE_WARPS
-
 
 
 void gemm(int ni, int nj, int nk, float alpha, float beta, float* A, float* B, float* C)
@@ -89,7 +82,7 @@ void init(int ni, int nj, int nk, float* alpha, float* beta, half* A, half* B, h
 }
 
 
-double safePercentDiff(double val1, double val2)
+double tensorPercentDiff(double val1, double val2)
 {
 	if (fabs(val1) < 1e-10 && fabs(val2) < 1e-10) return 0.0;
 	if (fabs(val1) < 1e-10 || fabs(val2) < 1e-10) return 100.0;
@@ -115,7 +108,7 @@ void compareResults(int ni, int nj, float* C, half* C_outputFromGpu)
 		{
 			float cpu_val = __half2float(__float2half(C[i * nj + j]));
 			float gpu_val = __half2float(C_outputFromGpu[i * nj + j]);
-			double diff = safePercentDiff(cpu_val, gpu_val);
+			double diff = tensorPercentDiff(cpu_val, gpu_val);
 			
 			if (!isinf(diff) && !isnan(diff)) {
 				avg_diff += diff;
@@ -156,168 +149,121 @@ void compareResults(int ni, int nj, float* C, half* C_outputFromGpu)
 	       avg_diff, max_diff, valid_comparisons);
 }
 
-// WARP SPECIALIZED KERNEL: Separate load and compute warps with double buffering
 __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
                                   const half* A, const half* B, half* C)
 {
 	using namespace nvcuda::wmma;
 	
-	__shared__ half shared_A[2][BLOCK_SIZE_M][BLOCK_SIZE_K];
-	__shared__ half shared_B[2][BLOCK_SIZE_K][BLOCK_SIZE_N];
+	// Bank conflict optimization: Add padding for 16-byte alignment
+	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K + 8];
+	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N + 8];
 	
-	int warp_id = (threadIdx.y * (blockDim.x / warpSize)) + (threadIdx.x / warpSize);
-	int lane_id = threadIdx.x % warpSize;
-	bool is_load_warp = (warp_id < NUM_LOAD_WARPS);
+	int warp_m = (threadIdx.x / warpSize);
+	int warp_n = threadIdx.y;
 	
 	int block_m = blockIdx.x;
 	int block_n = blockIdx.y;
-	int num_tiles = (K + BLOCK_SIZE_K - 1) / BLOCK_SIZE_K;
 	
-	if (is_load_warp) {
-		int num_load_threads = NUM_LOAD_WARPS * warpSize;
-		int load_thread_id = warp_id * warpSize + lane_id;
+	int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
+	int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
+	
+	int row_start = global_warp_m * WMMA_M;
+	int col_start = global_warp_n * WMMA_N;
+	
+	fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
+	fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
+	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc;  // Use FP32 accumulator for precision
+	fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c;
+	
+	fill_fragment(acc, 0.0f);
+	
+	// Tile across K dimension
+	for (int k_tile = 0; k_tile < K; k_tile += BLOCK_SIZE_K) {
+		// Cooperative loading of A tile into shared memory
+		int num_threads = blockDim.x * blockDim.y;
+		int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
+		int tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
 		
-		for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-			int k_tile = tile_idx * BLOCK_SIZE_K;
-			int buffer_idx = tile_idx % 2;
+		for (int i = thread_id; i < tile_size; i += num_threads) {
+			int row = i / BLOCK_SIZE_K;
+			int col = i % BLOCK_SIZE_K;
+			int global_row = block_m * BLOCK_SIZE_M + row;
+			int global_col = k_tile + col;
 			
-			// Load A tile
-			int tile_size_A = BLOCK_SIZE_M * BLOCK_SIZE_K;
-			for (int i = load_thread_id; i < tile_size_A; i += num_load_threads) {
-				int row = i / BLOCK_SIZE_K;
-				int col = i % BLOCK_SIZE_K;
-				int global_row = block_m * BLOCK_SIZE_M + row;
-				int global_col = k_tile + col;
-				
-				if (global_row < M && global_col < K) {
-					shared_A[buffer_idx][row][col] = A[global_row * K + global_col];
-				} else {
-					shared_A[buffer_idx][row][col] = __float2half(0.0f);
-				}
-			}
-			
-			// Load B tile
-			int tile_size_B = BLOCK_SIZE_K * BLOCK_SIZE_N;
-			for (int i = load_thread_id; i < tile_size_B; i += num_load_threads) {
-				int row = i / BLOCK_SIZE_N;
-				int col = i % BLOCK_SIZE_N;
-				int global_row = k_tile + row;
-				int global_col = block_n * BLOCK_SIZE_N + col;
-				
-				if (global_row < K && global_col < N) {
-					shared_B[buffer_idx][row][col] = B[global_row * N + global_col];
-				} else {
-					shared_B[buffer_idx][row][col] = __float2half(0.0f);
-				}
-			}
-			
-			// Sync: load warps done loading, compute warps can start
-			__syncthreads();
-		}
-		
-	} else {
-
-
-		int compute_warp_local_id = warp_id - NUM_LOAD_WARPS;  // 0 to (NUM_COMPUTE_WARPS-1)
-		int total_positions = 16;  // 4×4 grid of 16×16 WMMA tiles
-		int positions_per_warp;
-		int start_pos;
-		
-		int base_tiles = total_positions / NUM_COMPUTE_WARPS;
-		int extra_tiles = total_positions % NUM_COMPUTE_WARPS;
-		
-		if (compute_warp_local_id < extra_tiles) {
-			// First 'extra_tiles' warps get one more tile
-			positions_per_warp = base_tiles + 1;
-			start_pos = compute_warp_local_id * positions_per_warp;
-		} else {
-			// Remaining warps get base number of tiles
-			positions_per_warp = base_tiles;
-			start_pos = extra_tiles * (base_tiles + 1) + 
-			            (compute_warp_local_id - extra_tiles) * base_tiles;
-		}
-		
-		fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_a;
-		fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, half, row_major> frag_b;
-		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc[3];  // Max 3 tiles per warp (e.g., 6 compute warps)
-		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c;
-		
-		for (int p = 0; p < positions_per_warp; p++) {
-			fill_fragment(acc[p], 0.0f);
-		}
-		
-		for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-			int k_tile = tile_idx * BLOCK_SIZE_K;
-			int buffer_idx = tile_idx % 2;
-			
-			// Sync: wait for load warps to finish loading
-			__syncthreads();
-			
-			// Compute with current buffer - each warp may handle 1 or 2 positions
-			for (int p = 0; p < positions_per_warp; p++) {
-				int pos = start_pos + p;
-				int warp_m = pos / 4;  // Row in 4×4 grid
-				int warp_n = pos % 4;  // Col in 4×4 grid
-				
-				int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
-				int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
-				
-				int row_start = global_warp_m * WMMA_M;
-				int col_start = global_warp_n * WMMA_N;
-				
-				for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
-					int smem_a_row = warp_m * WMMA_M;
-					int smem_a_col = k_step;
-					int smem_b_row = k_step;
-					int smem_b_col = warp_n * WMMA_N;
-					
-					if (row_start < M && col_start < N && (k_tile + k_step) < K) {
-						load_matrix_sync(frag_a, &shared_A[buffer_idx][smem_a_row][smem_a_col], BLOCK_SIZE_K);
-						load_matrix_sync(frag_b, &shared_B[buffer_idx][smem_b_row][smem_b_col], BLOCK_SIZE_N);
-						mma_sync(acc[p], frag_a, frag_b, acc[p]);
-					}
-				}
+			if (global_row < M && global_col < K) {
+				shared_A[row][col] = A[global_row * K + global_col];
+			} else {
+				shared_A[row][col] = __float2half(0.0f);
 			}
 		}
 		
-		// Write results - each warp writes its tile(s)
-		for (int p = 0; p < positions_per_warp; p++) {
-			int pos = start_pos + p;
-			int warp_m = pos / 4;
-			int warp_n = pos % 4;
+		// Cooperative loading of B tile into shared memory
+		tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
+		for (int i = thread_id; i < tile_size; i += num_threads) {
+			int row = i / BLOCK_SIZE_N;
+			int col = i % BLOCK_SIZE_N;
+			int global_row = k_tile + row;
+			int global_col = block_n * BLOCK_SIZE_N + col;
 			
-			int global_warp_m = block_m * (BLOCK_SIZE_M / WMMA_M) + warp_m;
-			int global_warp_n = block_n * (BLOCK_SIZE_N / WMMA_N) + warp_n;
-			
-			int row_start = global_warp_m * WMMA_M;
-			int col_start = global_warp_n * WMMA_N;
-			
-			if (row_start < M && col_start < N) {
-				fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c_half;
-				load_matrix_sync(frag_c_half, C + row_start * N + col_start, N, mem_row_major);
-				
-				#pragma unroll
-				for (int idx = 0; idx < frag_c_half.num_elements; idx++) {
-					frag_c.x[idx] = __half2float(frag_c_half.x[idx]);
-				}
-				
-				float alpha_f = __half2float(alpha);
-				float beta_f = __half2float(beta);
-				
-				#pragma unroll
-				for (int idx = 0; idx < acc[p].num_elements; idx++) {
-					acc[p].x[idx] = fmaf(acc[p].x[idx], alpha_f, frag_c.x[idx] * beta_f);
-				}
-				
-				fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> acc_half;
-				#pragma unroll
-				for (int idx = 0; idx < acc[p].num_elements; idx++) {
-					acc_half.x[idx] = __float2half(acc[p].x[idx]);
-				}
-				
-				store_matrix_sync(C + row_start * N + col_start, acc_half, N, mem_row_major);
+			if (global_row < K && global_col < N) {
+				shared_B[row][col] = B[global_row * N + global_col];
+			} else {
+				shared_B[row][col] = __float2half(0.0f);
 			}
 		}
+		
+		__syncthreads();
+		
+		// Compute using shared memory
+		for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
+			int smem_a_row = warp_m * WMMA_M;
+			int smem_a_col = k_step;
+			
+			int smem_b_row = k_step;
+			int smem_b_col = warp_n * WMMA_N;
+			
+			if (row_start < M && col_start < N && 
+			    (k_tile + k_step) < K) {
+				load_matrix_sync(frag_a, &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K + 8);
+				load_matrix_sync(frag_b, &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N + 8);
+				
+				mma_sync(acc, frag_a, frag_b, acc);
+			}
+		}
+		
+		__syncthreads();
+	}
+	
+	// Epilogue: C = alpha * (A*B) + beta * C
+	if (row_start < M && col_start < N) {
+		// Load original C values as FP16
+		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> frag_c_half;
+		load_matrix_sync(frag_c_half, C + row_start * N + col_start, N, mem_row_major);
+		
+		// Convert FP16 to FP32 for accurate computation
+		#pragma unroll
+		for (int idx = 0; idx < frag_c_half.num_elements; idx++) {
+			frag_c.x[idx] = __half2float(frag_c_half.x[idx]);
+		}
+		
+		// Convert alpha and beta to FP32
+		float alpha_f = __half2float(alpha);
+		float beta_f = __half2float(beta);
+		
+		// Compute C = alpha * acc + beta * C in FP32
+		#pragma unroll
+		for (int idx = 0; idx < acc.num_elements; idx++) {
+			acc.x[idx] = fmaf(acc.x[idx], alpha_f, frag_c.x[idx] * beta_f);
+		}
+		
+		// Convert result back to FP16 for storage
+		fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, half> acc_half;
+		#pragma unroll
+		for (int idx = 0; idx < acc.num_elements; idx++) {
+			acc_half.x[idx] = __float2half(acc.x[idx]);
+		}
+		
+		store_matrix_sync(C + row_start * N + col_start, acc_half, N, mem_row_major);
 	}
 }
 
@@ -334,25 +280,32 @@ void gemmCuda_Tensor(int ni, int nj, int nk, float alpha_f, float beta_f,
 	cudaMalloc((void **)&d_B, sizeof(half) * nk * nj);
 	cudaMalloc((void **)&d_C, sizeof(half) * ni * nj);
 	
-	cudaMemcpy(d_A, A, sizeof(half) * ni * nk, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, B, sizeof(half) * nk * nj, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_C, C, sizeof(half) * ni * nj, cudaMemcpyHostToDevice);
+	// Create CUDA stream for async operations
+	cudaStream_t stream;
+	cudaStreamCreate(&stream);
 	
-	dim3 block_dim(128, 4);  // 512 threads total = 16 warps for 64x64 tile
+	// Use cudaMemcpyAsync for non-blocking transfers
+	cudaMemcpyAsync(d_A, A, sizeof(half) * ni * nk, cudaMemcpyHostToDevice, stream);
+	cudaMemcpyAsync(d_B, B, sizeof(half) * nk * nj, cudaMemcpyHostToDevice, stream);
+	cudaMemcpyAsync(d_C, C, sizeof(half) * ni * nj, cudaMemcpyHostToDevice, stream);
+	
+	dim3 block_dim(128, 4);  // 512 threads total = 16 warps to cover 64×64 tile
 	dim3 grid_dim((ni + BLOCK_SIZE_M - 1) / BLOCK_SIZE_M,
 	              (nj + BLOCK_SIZE_N - 1) / BLOCK_SIZE_N);
 
   	polybench_start_instruments;
 
-	gemm_wmma_kernel<<< grid_dim, block_dim >>>(ni, nj, nk, alpha_h, beta_h, d_A, d_B, d_C);
-	cudaDeviceSynchronize();
+	gemm_wmma_kernel<<<grid_dim, block_dim, 0, stream>>>(ni, nj, nk, alpha_h, beta_h, d_A, d_B, d_C);
+	cudaStreamSynchronize(stream);
 
 	printf("GPU Tensor Core (WMMA FP16) Time in seconds:\n");
   	polybench_stop_instruments;
  	polybench_print_instruments;
 
-	cudaMemcpy(C_outputFromGpu, d_C, sizeof(half) * ni * nj, cudaMemcpyDeviceToHost);    
+	cudaMemcpyAsync(C_outputFromGpu, d_C, sizeof(half) * ni * nj, cudaMemcpyDeviceToHost, stream);    
+	cudaStreamSynchronize(stream);
 	
+	cudaStreamDestroy(stream);
 	cudaFree(d_A);
 	cudaFree(d_B);
 	cudaFree(d_C);
