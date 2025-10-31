@@ -45,8 +45,8 @@ __global__ void dgemm_register_tiled(float alpha, float beta, int M, int N, int 
   for(unsigned int bk = 0; bk < K; bk += BK) {
     float* gA = A + (bm * K + bk);
     float* gB = B + (bk * N + bn);
-    readTileChunked<BM, BK, NUM_THREADS>(K, gA, sA);
-    readTileChunked<BK, BN, NUM_THREADS>(N, gB, sB);
+    readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA);
+    readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB);
     __syncthreads();
 
     for(int wk = 0; wk < BK; wk += TK) {
