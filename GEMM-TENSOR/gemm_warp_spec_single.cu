@@ -158,9 +158,9 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 {
 	using namespace nvcuda::wmma;
 	
-	// SINGLE BUFFER (no ping-pong)
-	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K];
-	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N];
+	// SINGLE BUFFER with bank conflict optimization
+	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K + 8];
+	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N + 8];
 	
 	// Warp specialization: identify role
 	int warp_id = (threadIdx.y * (blockDim.x / warpSize)) + (threadIdx.x / warpSize);
@@ -264,8 +264,8 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 					int smem_b_col = warp_n * WMMA_N;
 					
 					if (row_start < M && col_start < N && (k_tile + k_step) < K) {
-						load_matrix_sync(frag_a, &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K);
-						load_matrix_sync(frag_b, &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N);
+						load_matrix_sync(frag_a, &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K + 8);
+						load_matrix_sync(frag_b, &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N + 8);
 						mma_sync(acc[p], frag_a, frag_b, acc[p]);
 					}
 				}
@@ -328,9 +328,14 @@ void gemmCuda_Tensor(int ni, int nj, int nk, float alpha_f, float beta_f,
 	cudaMalloc((void **)&d_B, sizeof(half) * nk * nj);
 	cudaMalloc((void **)&d_C, sizeof(half) * ni * nj);
 	
-	cudaMemcpy(d_A, A, sizeof(half) * ni * nk, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, B, sizeof(half) * nk * nj, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_C, C, sizeof(half) * ni * nj, cudaMemcpyHostToDevice);
+	// Create CUDA stream for async operations
+	cudaStream_t stream;
+	cudaStreamCreate(&stream);
+	
+	// Use cudaMemcpyAsync for non-blocking transfers
+	cudaMemcpyAsync(d_A, A, sizeof(half) * ni * nk, cudaMemcpyHostToDevice, stream);
+	cudaMemcpyAsync(d_B, B, sizeof(half) * nk * nj, cudaMemcpyHostToDevice, stream);
+	cudaMemcpyAsync(d_C, C, sizeof(half) * ni * nj, cudaMemcpyHostToDevice, stream);
 	
 	dim3 block_dim(128, 4);  // 512 threads total = 16 warps to cover 64×64 tile
 	dim3 grid_dim((ni + BLOCK_SIZE_M - 1) / BLOCK_SIZE_M,
@@ -338,15 +343,17 @@ void gemmCuda_Tensor(int ni, int nj, int nk, float alpha_f, float beta_f,
 
   	polybench_start_instruments;
 
-	gemm_wmma_kernel<<< grid_dim, block_dim >>>(ni, nj, nk, alpha_h, beta_h, d_A, d_B, d_C);
-	cudaDeviceSynchronize();
+	gemm_wmma_kernel<<<grid_dim, block_dim, 0, stream>>>(ni, nj, nk, alpha_h, beta_h, d_A, d_B, d_C);
+	cudaStreamSynchronize(stream);
 
 	printf("GPU Tensor Core (WMMA FP16) Time in seconds:\n");
   	polybench_stop_instruments;
  	polybench_print_instruments;
 
-	cudaMemcpy(C_outputFromGpu, d_C, sizeof(half) * ni * nj, cudaMemcpyDeviceToHost);    
+	cudaMemcpyAsync(C_outputFromGpu, d_C, sizeof(half) * ni * nj, cudaMemcpyDeviceToHost, stream);    
+	cudaStreamSynchronize(stream);
 	
+	cudaStreamDestroy(stream);
 	cudaFree(d_A);
 	cudaFree(d_B);
 	cudaFree(d_C);
