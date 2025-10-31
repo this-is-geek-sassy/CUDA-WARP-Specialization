@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/7_dgemm_warp_specialized_driver.h" 
-#include "kernels/7_dgemm_warp_specialized.cuh"
+#include "drivers/7_dgemm_double_buffered_driver.h" 
+#include "kernels/7_dgemm_double_buffered.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,23 +23,18 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 128;
+bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const unsigned int BM = 64;
   const unsigned int BK = 16;
-  const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
-  const unsigned int WARP_SIZE = 32;
-  const unsigned int NUM_LOAD_WARPS = 8;
-  const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
-  const unsigned int BDM = BM/TM;
-  const unsigned int BDN = BN/TN;
-  const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
+  const unsigned int BN = 64;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
+  const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
 
   dim3 gridDim(N/BN, M/BM, 1);
-  dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-  const size_t sharedMemSize = (BDM * BDN + BK * (BM + BN)) * 2 * sizeof(float);
+  dim3 blockDim(BN/TN, BM/TM, 1);
+  const size_t sharedMemSize = 2 * BK * (BM + BN) * sizeof(float);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -55,10 +50,9 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
-
+  std::cout << "DRIVER: Launching Double Buffered Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_double_buffered<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
