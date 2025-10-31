@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/3_dgemm_gmem_optm_driver.h" 
-#include "kernels/3_dgemm_gmem_optm.cuh"
+#include "drivers/8_dgemm_warp_specialized_driver.h" 
+#include "kernels/8_dgemm_warp_specialized.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,17 +23,35 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_gmem_optm_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 128;
+
+bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  cudaSetDevice(0);
+
+  const unsigned int BM = 64;
   const unsigned int BK = 16;
-  const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
+  const unsigned int BN = 64;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
+  const unsigned int WARP_SIZE = 32;
+  const unsigned int NUM_LOAD_WARPS = 8;
+  const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
+  const unsigned int BDM = BM/TM;
+  const unsigned int BDN = BN/TN;
+  const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
 
   dim3 gridDim(N/BN, M/BM, 1);
-  dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
+  dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
+  const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+
+std::cout << "--- LAUNCH PARAMS ---" << std::endl;
+  std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
+  std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
+  std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
+  std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
+  std::cout << "No. load threads:    " << NUM_LOAD_THREADS << std::endl;
+  std::cout << "No. compute threads:    " << NUM_COMPUTE_THREADS << std::endl;
+  std::cout << "---------------------" << std::endl;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -49,9 +67,11 @@ bool dgemm_gmem_optm_driver(float alpha, float beta, int M, int N, int K, float*
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching GMEM Optimised Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
+
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_gmem_optm<BM, BK, BN, TM, TN, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  if(!CUDA_CHECK(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared))) goto cleanup;
+  dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
@@ -67,6 +87,7 @@ bool dgemm_gmem_optm_driver(float alpha, float beta, int M, int N, int K, float*
   if(dA) cudaFree(dA);
   if(dB) cudaFree(dB);
   if(dC) cudaFree(dC);
+  cudaDeviceSetCacheConfig(cudaFuncCachePreferNone);
 
   return cudaGetLastError() == cudaSuccess;
 }

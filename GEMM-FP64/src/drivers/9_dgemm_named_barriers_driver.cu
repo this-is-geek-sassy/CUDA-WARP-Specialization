@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/6a_dgemm_overlapped_driver.h" 
-#include "kernels/6a_dgemm_overlapped.cuh"
+#include "drivers/9_dgemm_named_barriers_driver.h" 
+#include "kernels/9_dgemm_named_barriers.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,18 +23,34 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 128;
+bool dgemm_named_barriers_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const unsigned int BM = 64;
   const unsigned int BK = 16;
-  const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
-  const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
+  const unsigned int BN = 64;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
+  const unsigned int WARP_SIZE = 32;
+  const unsigned int NUM_TILE_LOAD_WARPS = 4;
+  const unsigned int NUM_GLOBAL_LOAD_WARPS = 4;
+  const unsigned int NUM_LOAD_THREADS = WARP_SIZE * (NUM_TILE_LOAD_WARPS + NUM_GLOBAL_LOAD_WARPS);
+  const unsigned int BDM = BM/TM;
+  const unsigned int BDN = BN/TN;
+  const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
 
   dim3 gridDim(N/BN, M/BM, 1);
-  dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
+  dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
+  const size_t sharedMemSize =  (BM * BN + BK * (BM + BN) * 2) * sizeof(float);
+
+  std::cout << "--- LAUNCH PARAMS ---" << std::endl;
+  std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
+  std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
+  std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
+  std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
+  std::cout << "No. tile load threads:    " << NUM_TILE_LOAD_WARPS * WARP_SIZE << std::endl;
+  std::cout << "No. global load threads:    " << NUM_GLOBAL_LOAD_WARPS * WARP_SIZE << std::endl;
+  std::cout << "No. compute threads:    " << NUM_COMPUTE_THREADS << std::endl;
+  std::cout << "---------------------" << std::endl;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -50,9 +66,10 @@ bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Overlapped Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
+
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_overlapped<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_named_barriers<BM, BK, BN, TM, TN, TK, NUM_TILE_LOAD_WARPS, NUM_GLOBAL_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

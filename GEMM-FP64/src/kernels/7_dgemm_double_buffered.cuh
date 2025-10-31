@@ -1,5 +1,5 @@
-#ifndef DGEMM_BANK_CONFLICTS_CUH
-#define DGEMM_BANK_CONFLICTS_CUH
+#ifndef DGEMM_DOUBLE_BUFFERED_CUH
+#define DGEMM_DOUBLE_BUFFERED_CUH
 
 #include <cuda.h>
 #include <cassert>
@@ -21,10 +21,11 @@
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
-__global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
+__global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
   extern __shared__ float sm[];
-  float* sA = &sm[0];
-  float* sB = &sm[BM * BK];
+  float* sA[2] = {&sm[0], &sm[BM * BK]};
+  float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
+  int mem = 0, buf = 1;
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
@@ -40,20 +41,45 @@ __global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int 
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
-  for(unsigned int bk = 0; bk < K; bk += BK) {
-    float* gA = A + (bm * K + bk);
-    float* gB = B + (bk * N + bn);
-    readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA);
-    readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB);
-    __syncthreads();
+  // Pre-load the first tile.
+  float* gA = A + bm * K;
+  float* gB = B + bn;
+  readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA[mem]);
+  readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB[mem]);
+  __syncthreads();
 
+  // Update pointers to the next tile.
+  gA += BK;
+  gB += BK * N;
+  
+  for(unsigned int bk = BK; bk < K; bk += BK) {
+    // Load the next tile into extra buffers.
+    readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA[buf]);
+    readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB[buf]);
+
+    // Process the current tile.
     for(int k = 0; k < BK; k++)
       for(int i = 0; i < TM; i++)
         for(int j = 0; j < TN; j++)
-          acc_reg[i][j] = fma(sA[(ty + i * BDM) * BK + k], sB[k * BN + (tx + j * BDN)], acc_reg[i][j]);
+          acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+
     __syncthreads();
+
+    // Update pointers to next tile.
+    gA += BK;
+    gB += BK * N;
+
+    // Swap buffers.
+    buf ^= 1;
+    mem ^= 1;
   }
 
+  // Process the last tile.
+  for(int k = 0; k < BK; k++)
+    for(int i = 0; i < TM; i++)
+      for(int j = 0; j < TN; j++)
+        acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+ 
   // Epilogue
   for(int i = 0; i < TM; i++) {
     for(int j = 0; j < TN; j++) {
@@ -62,4 +88,4 @@ __global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int 
   }
 }
 
-#endif // DGEMM_BANK_CONFLICTS_CUH
+#endif // DGEMM_DOUBLE_BUFFERED_CUH
