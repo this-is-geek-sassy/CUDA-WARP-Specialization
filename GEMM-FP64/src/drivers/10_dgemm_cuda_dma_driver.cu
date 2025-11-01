@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/8_dgemm_warp_specialized_driver.h" 
-#include "kernels/8_dgemm_warp_specialized.cuh"
+#include "drivers/10_dgemm_cuda_dma_driver.h" 
+#include "kernels/10_dgemm_cuda_dma.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,10 +23,7 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-
-bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  cudaSetDevice(0);
-
+bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
   const unsigned int BM = 64;
   const unsigned int BK = 16;
   const unsigned int BN = 64;
@@ -70,8 +67,7 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
 
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  if(!CUDA_CHECK(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared))) goto cleanup;
-  dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_cuda_dma<BM, BK, BN, TM, TN, TK, NUM_LOAD_THREADS, NUM_COMPUTE_THREADS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
@@ -87,7 +83,6 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   if(dA) cudaFree(dA);
   if(dB) cudaFree(dB);
   if(dC) cudaFree(dC);
-  cudaDeviceSetCacheConfig(cudaFuncCachePreferNone);
 
   return cudaGetLastError() == cudaSuccess;
 }
