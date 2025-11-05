@@ -3,9 +3,12 @@
 
 #include <cuda.h>
 #include <cassert>
+#include <cooperative_groups.h>
+#include <cooperative_groups/memcpy_async.h>
+#include <cuda/barrier>
 #include "utils/global_mem_utils.cuh"
 
-/// @brief Bank Conflicts Free DGEMM Kernel
+/// @brief Double Buffered DGEMM Kernel
 /// @param BM Tile Size Dimension (compile-time constant)
 /// @param BK Tile Size Dimension (compile-time constant)
 /// @param BN Tile Size Dimension (compile-time constant)
@@ -22,16 +25,22 @@
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
 __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  extern __shared__ float sm[];
+  namespace cg = cooperative_groups;
+  auto block = cg::this_thread_block();
+  auto tileA = cg::tiled_partition<BM>(block);
+  auto tileB = cg::tiled_partition<BK>(block);
+
+  constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
+  constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
+
+  __shared__ float sm[2 * BK * (BM + BN)];
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
   int mem = 0, buf = 1;
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
-
-  constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
-  constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
+  const unsigned int tId = ty * BDN + tx;
 
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
@@ -41,21 +50,17 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
-  // Pre-load the first tile.
-  float* gA = A + bm * K;
-  float* gB = B + bn;
-  readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA[mem]);
-  readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB[mem]);
-  __syncthreads();
 
-  // Update pointers to the next tile.
-  gA += BK;
-  gB += BK * N;
+  // Pre-load the first tile.
+  cg::memcpy_async(tileA, &sA[mem][tileA.meta_group_rank() * BK], &A[(bm + tileA.meta_group_rank()) * K], BK * sizeof(float));
+  cg::memcpy_async(tileB, &sB[mem][tileB.meta_group_rank() * BN], &B[tileB.meta_group_rank() * N + bn], BN * sizeof(float));
+
+  // Wait for the loads to complete.
+  cg::wait(block);
   
   for(unsigned int bk = BK; bk < K; bk += BK) {
-    // Load the next tile into extra buffers.
-    readTileChunked<BM, BK, NUM_THREADS, 0>(K, gA, sA[buf]);
-    readTileChunked<BK, BN, NUM_THREADS, 0>(N, gB, sB[buf]);
+    cg::memcpy_async(tileA, &sA[buf][tileA.meta_group_rank() * BK], &A[(bm + tileA.meta_group_rank()) * K + bk], cuda::aligned_size_t<16>(BK * sizeof(float)));
+    cg::memcpy_async(tileB, &sB[buf][tileB.meta_group_rank() * BN], &B[(tileB.meta_group_rank() + bk) * N + bn], cuda::aligned_size_t<16>(BN * sizeof(float)));
 
     // Process the current tile.
     for(int k = 0; k < BK; k++)
@@ -63,11 +68,9 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
         for(int j = 0; j < TN; j++)
           acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
 
-    __syncthreads();
-
-    // Update pointers to next tile.
-    gA += BK;
-    gB += BK * N;
+    
+    // Wait for the next tile to be loaded.
+    cg::wait(block);
 
     // Swap buffers.
     buf ^= 1;
@@ -81,11 +84,9 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
         acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
  
   // Epilogue
-  for(int i = 0; i < TM; i++) {
-    for(int j = 0; j < TN; j++) {
+  for(int i = 0; i < TM; i++)
+    for(int j = 0; j < TN; j++)
       C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
-    }
-  }
 }
 
 #endif // DGEMM_DOUBLE_BUFFERED_CUH
