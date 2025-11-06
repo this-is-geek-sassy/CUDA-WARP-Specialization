@@ -27,12 +27,12 @@
 bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
   cudaSetDevice(0);
 
-  const unsigned int BM = 64;
+  const unsigned int BM = 128;
   const unsigned int BK = 16;
-  const unsigned int BN = 64;
-  const unsigned int TM = 4;
-  const unsigned int TN = 4;
-  const unsigned int TK = 2;
+  const unsigned int BN = 128;
+  const unsigned int TM = 8;
+  const unsigned int TN = 8;
+  const unsigned int TK = 4;
   const unsigned int WARP_SIZE = 32;
   const unsigned int NUM_LOAD_WARPS = 8;
   const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
