@@ -2,13 +2,15 @@ EXECUTABLE := gemm_fp_32_cudadma
 CUFILES := gemm_fp_32_cudaDMA.cu
 
 # Dataset size options:
-# -DMINI_DATASET         512x512
-# -DSMALL_DATASET        512x512
+# -DMINI_DATASET         32x32
+# -DSMALL_DATASET        124x124
 # -DSTANDARD_DATASET     512x512 (default)
 # -DLARGE_DATASET        1024x1024
 # -DEXTRALARGE_DATASET   2048x2048
 # -DHUGE_DATASET         4096x4096
-DATASET :=
+# -DHUMONGOUS_DATASET    8192X8192
+
+DATASET := -DHUGE_DATASET
 
 ARCH := -gencode arch=compute_86,code=sm_86
 CFLAGS := -O3

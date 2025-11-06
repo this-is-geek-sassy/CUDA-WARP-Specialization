@@ -173,100 +173,111 @@ __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t be
 __global__ void gemm_kernel_fp32_cudaDMA(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
                                          fp32_t *a, fp32_t *b, fp32_t *c)
 {
-    // Shared memory for tiles
     __shared__ fp32_t As[TILE_SIZE][TILE_SIZE];
     __shared__ fp32_t Bs[TILE_SIZE][TILE_SIZE];
     
-    // Create two cudaDMAStrided objects for loading A and B tiles
-    // Template parameters: <DO_SYNC, ALIGNMENT, BYTES_PER_ELMT, DMA_THREADS, NUM_ELMTS>
-    // BYTES_PER_ELMT = TILE_SIZE * sizeof(float) = 32 * 4 = 128 bytes per row
-    // NUM_ELMTS = TILE_SIZE = 32 rows to load
     cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
-        dma_ld_a(0,                          // dmaID
-                 COMPUTE_THREADS_PER_CTA,    // num_compute_threads
-                 COMPUTE_THREADS_PER_CTA,    // dma_threadIdx_start
-                 nk * sizeof(fp32_t),        // src_stride (pitch of A in bytes)
-                 TILE_SIZE * sizeof(fp32_t));// dst_stride (pitch in shared mem)
+        dma_ld_a(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
+                 nk * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
     
     cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
-        dma_ld_b(1,                          // dmaID
-                 COMPUTE_THREADS_PER_CTA,    // num_compute_threads  
-                 COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD, // dma_threadIdx_start
-                 nj * sizeof(fp32_t),        // src_stride (pitch of B in bytes)
-                 TILE_SIZE * sizeof(fp32_t));// dst_stride (pitch in shared mem)
+        dma_ld_b(1, COMPUTE_THREADS_PER_CTA, 
+                 COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD,
+                 nj * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
     
     int bx = blockIdx.x;
     int by = blockIdx.y;
+    int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
     
-    // Compute threads perform the matrix multiplication
+    // Compute threads
     if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
-        int tx = threadIdx.x % TILE_SIZE;
-        int ty = threadIdx.x / TILE_SIZE;
+        int thread_id = threadIdx.x;
+        int elements_per_thread = (TILE_SIZE * TILE_SIZE) / COMPUTE_THREADS_PER_CTA; // 4
         
-        // Calculate global row and column for this thread
-        int row = by * TILE_SIZE + ty;
-        int col = bx * TILE_SIZE + tx;
+        fp32_t sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         
-        fp32_t sum = 0.0f;
-        
-        // Loop over tiles
-        int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-        
-        // Start the first DMA transfer
+        // CRITICAL: Start the first DMA transfer BEFORE waiting
         dma_ld_a.start_async_dma();
         dma_ld_b.start_async_dma();
         
         for (int t = 0; t < numTiles; t++) 
         {
-            // Wait for DMA to finish loading current tile
+            // Wait for current tile to be loaded
             dma_ld_a.wait_for_dma_finish();
             dma_ld_b.wait_for_dma_finish();
             
-            // Compute partial dot product for this tile
-            #pragma unroll
-            for (int k = 0; k < TILE_SIZE; k++) {
-                sum += As[ty][k] * Bs[k][tx];
+            // Compute on this tile
+            for (int elem = 0; elem < elements_per_thread; elem++)
+            {
+                int linear_idx = thread_id * elements_per_thread + elem;
+                int ty = linear_idx / TILE_SIZE;
+                int tx = linear_idx % TILE_SIZE;
+                
+                #pragma unroll
+                for (int k = 0; k < TILE_SIZE; k++) {
+                    sums[elem] += As[ty][k] * Bs[k][tx];
+                }
             }
             
-            // Start loading next tile (if not last iteration)
+            // Signal next transfer (if not last iteration)
             if (t < numTiles - 1) {
                 dma_ld_a.start_async_dma();
                 dma_ld_b.start_async_dma();
             }
         }
         
-        // Write result to global memory
-        if (row < ni && col < nj) {
-            c[row * nj + col] = beta * c[row * nj + col] + alpha * sum;
+        // Write results
+        for (int elem = 0; elem < elements_per_thread; elem++)
+        {
+            int linear_idx = thread_id * elements_per_thread + elem;
+            int ty = linear_idx / TILE_SIZE;
+            int tx = linear_idx % TILE_SIZE;
+            
+            int row = by * TILE_SIZE + ty;
+            int col = bx * TILE_SIZE + tx;
+            
+            if (row < ni && col < nj) {
+                c[row * nj + col] = beta * c[row * nj + col] + alpha * sums[elem];
+            }
         }
     }
-    // DMA threads load tile A
+    // DMA threads for A
     else if (dma_ld_a.owns_this_thread())
     {
-        int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-        
         for (int t = 0; t < numTiles; t++)
         {
             int aRow = by * TILE_SIZE;
             int aCol = t * TILE_SIZE;
             
-            fp32_t *src_ptr = &a[aRow * nk + aCol];
-            dma_ld_a.execute_dma(src_ptr, As);
+            // Boundary check for source pointer
+            if (aRow < ni && aCol < nk) {
+                fp32_t *src_ptr = &a[aRow * nk + aCol];
+                dma_ld_a.execute_dma(src_ptr, As);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
+            } else {
+                // Still need to participate in synchronization even if out of bounds
+                dma_ld_a.wait_for_dma_start();
+                dma_ld_a.finish_async_dma();
+            }
         }
     }
-    // DMA threads load tile B
+    // DMA threads for B
     else if (dma_ld_b.owns_this_thread())
     {
-        int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-        
         for (int t = 0; t < numTiles; t++)
         {
             int bRow = t * TILE_SIZE;
             int bCol = bx * TILE_SIZE;
             
-            fp32_t *src_ptr = &b[bRow * nj + bCol];
-            dma_ld_b.execute_dma(src_ptr, Bs);
+            // Boundary check for source pointer
+            if (bRow < nk && bCol < nj) {
+                fp32_t *src_ptr = &b[bRow * nj + bCol];
+                dma_ld_b.execute_dma(src_ptr, Bs);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
+            } else {
+                // Still need to participate in synchronization
+                dma_ld_b.wait_for_dma_start();
+                dma_ld_b.finish_async_dma();
+            }
         }
     }
 }
