@@ -8,7 +8,7 @@ BUILD_DIR := bin
 # -I. allows includes like "drivers/basic_dgemm_driver.h"
 # -O3 is for optimization
 # -arch=sm_XX should be set to your GPU's compute capability (e.g., sm_75 for Turing)
-NVCCFLAGS := -I. -O3 --ptxas-options=-v -arch=sm_89
+NVCCFLAGS := -I. -O3 --ptxas-options=-v -arch=sm_86
 
 # Linker flags (add libraries here if needed, e.g., -lcublas)
 LDFLAGS :=

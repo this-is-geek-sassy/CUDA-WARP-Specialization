@@ -8,7 +8,7 @@ CUFILES := gemm_fp32_baseline.cu
 # -DLARGE_DATASET        1024x1024
 # -DEXTRALARGE_DATASET   2048x2048
 # -DHUGE_DATASET         4096x4096
-DATASET :=
+DATASET := -DHUGE_DATASET
 
 ARCH := -gencode arch=compute_86,code=sm_86
 CFLAGS := -O3
