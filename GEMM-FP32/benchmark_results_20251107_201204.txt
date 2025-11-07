@@ -1,0 +1,98 @@
+========================================
+cudaDMA GEMM Benchmark Suite
+========================================
+Date: Friday 07 November 2025 08:12:04 PM IST
+Max dimension: 1024x1024
+Datasets to run: 4 (MINI_DATASET SMALL_DATASET STANDARD_DATASET LARGE_DATASET)
+Iterations per dataset: 5
+Log file: benchmark_results_20251107_201204.txt
+
+----------------------------------------
+Dataset: MINI_DATASET (32x32)
+----------------------------------------
+Building...
+Running 5 iterations...
+  Run 1/5... Baseline: 0.000534s, Single: 0.000406s, Double: 0.000392s, CPU: 0.070484s
+  Run 2/5... Baseline: 0.000528s, Single: 0.000405s, Double: 0.000391s, CPU: 0.068809s
+  Run 3/5... Baseline: 0.000530s, Single: 0.000405s, Double: 0.000391s, CPU: 0.069637s
+  Run 4/5... Baseline: 0.000530s, Single: 0.000406s, Double: 0.000391s, CPU: 0.070578s
+  Run 5/5... Baseline: 0.000530s, Single: 0.000409s, Double: 0.000392s, CPU: 0.068866s
+
+Average Baseline:       0.0005304 seconds
+Average cudaDMA Single: 0.0004062 seconds
+Average cudaDMA Double: 0.0003914 seconds
+Average CPU:            0.0696748 seconds
+Speedup (Single):       1.306x
+Speedup (Double):       1.355x
+
+----------------------------------------
+Dataset: SMALL_DATASET (124x124)
+----------------------------------------
+Building...
+Running 5 iterations...
+  Run 1/5... Baseline: 0.000537s, Single: 0.000412s, Double: 0.000411s, CPU: 0.070412s
+  Run 2/5... Baseline: 0.000528s, Single: 0.000407s, Double: 0.000391s, CPU: 0.069055s
+  Run 3/5... Baseline: 0.000531s, Single: 0.000414s, Double: 0.000398s, CPU: 0.069386s
+  Run 4/5... Baseline: 0.000527s, Single: 0.000406s, Double: 0.000391s, CPU: 0.069605s
+  Run 5/5... Baseline: 0.000528s, Single: 0.000407s, Double: 0.000393s, CPU: 0.068984s
+
+Average Baseline:       0.0005302 seconds
+Average cudaDMA Single: 0.0004092 seconds
+Average cudaDMA Double: 0.0003968 seconds
+Average CPU:            0.0694884 seconds
+Speedup (Single):       1.296x
+Speedup (Double):       1.336x
+
+----------------------------------------
+Dataset: STANDARD_DATASET (512x512)
+----------------------------------------
+Building...
+Running 5 iterations...
+  Run 1/5... Baseline: 0.000532s, Single: 0.000409s, Double: 0.000395s, CPU: 0.070541s
+  Run 2/5... Baseline: 0.000527s, Single: 0.000415s, Double: 0.000398s, CPU: 0.070314s
+  Run 3/5... Baseline: 0.000535s, Single: 0.000406s, Double: 0.000391s, CPU: 0.069495s
+  Run 4/5... Baseline: 0.000531s, Single: 0.000406s, Double: 0.000392s, CPU: 0.070220s
+  Run 5/5... Baseline: 0.000529s, Single: 0.000406s, Double: 0.000391s, CPU: 0.067957s
+
+Average Baseline:       0.0005308 seconds
+Average cudaDMA Single: 0.0004084 seconds
+Average cudaDMA Double: 0.0003934 seconds
+Average CPU:            0.0697054 seconds
+Speedup (Single):       1.300x
+Speedup (Double):       1.349x
+
+----------------------------------------
+Dataset: LARGE_DATASET (1024x1024)
+----------------------------------------
+Building...
+Running 5 iterations...
+  Run 1/5... Baseline: 0.003810s, Single: 0.003098s, Double: 0.002945s, CPU: 2.000763s
+  Run 2/5... Baseline: 0.003807s, Single: 0.003096s, Double: 0.002945s, CPU: 2.017681s
+  Run 3/5... Baseline: 0.003822s, Single: 0.003096s, Double: 0.002945s, CPU: 1.973253s
+  Run 4/5... Baseline: 0.003808s, Single: 0.003123s, Double: 0.002942s, CPU: 1.970302s
+  Run 5/5... Baseline: 0.003810s, Single: 0.003097s, Double: 0.002965s, CPU: 1.978786s
+
+Average Baseline:       0.0038114 seconds
+Average cudaDMA Single: 0.003102 seconds
+Average cudaDMA Double: 0.0029484 seconds
+Average CPU:            1.98816 seconds
+Speedup (Single):       1.229x
+Speedup (Double):       1.293x
+
+========================================
+SUMMARY
+========================================
+Dataset              Dimensions   Baseline(s)  Single(s)    Double(s)    CPU(s)       Spd-S      Spd-D     
+----------------------------------------------------------------------------------------------------------------------------
+MINI_DATASET         32x32        0.0005304    0.0004062    0.0003914    0.0696748    1.306x     1.355x    
+SMALL_DATASET        124x124      0.0005302    0.0004092    0.0003968    0.0694884    1.296x     1.336x    
+STANDARD_DATASET     512x512      0.0005308    0.0004084    0.0003934    0.0697054    1.300x     1.349x    
+LARGE_DATASET        1024x1024    0.0038114    0.003102     0.0029484    1.98816      1.229x     1.293x    
+========================================
+Benchmark complete!
+Results saved to: benchmark_results_20251107_201204.txt
+========================================
+
+Usage: ./benchmark_cudadma.sh [max_dimension]
+Available dimensions: 32 124 512 1024 2048 4096 8192
+Example: ./benchmark_cudadma.sh 1024  (benchmarks up to 1024x1024)
