@@ -1,0 +1,27 @@
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+ERROR: No datasets found for max dimension run.log
+Valid dimensions are: 32 124 512 1024 2048 4096 8192
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+ERROR: No datasets found for max dimension run.log
+Valid dimensions are: 32 124 512 1024 2048 4096 8192
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+./benchmark_cudadma.sh: line 48: [: run.log: integer expression expected
+ERROR: No datasets found for max dimension run.log
+Valid dimensions are: 32 124 512 1024 2048 4096 8192
