@@ -6,7 +6,7 @@
 #define GEMM_FP32_CUH
 
 /* Default to STANDARD_DATASET. */
-# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET) && !defined(HUGE_DATASET)
+# if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET) && !defined(HUGE_DATASET) && !defined(HUMONGOUS_DATASET)
 #  define STANDARD_DATASET
 # endif
 
@@ -47,6 +47,13 @@
 #define NI 4096
 #define NJ 4096
 #define NK 4096
+#  endif
+
+
+#  ifdef HUMONGOUS_DATASET
+#define NI 8192
+#define NJ 8192
+#define NK 8192
 #  endif
 # endif /* !N */
 
