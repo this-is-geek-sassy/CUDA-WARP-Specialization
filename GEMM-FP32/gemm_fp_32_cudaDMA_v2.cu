@@ -15,7 +15,7 @@
 #include "../../polybenchGpu/common/polybenchUtilFuncts.h"
 
 // Include cudaDMA for warp-specialized DMA
-#include "cudaDMA.h"
+#include "cudaDMAv2.h"
 
 #define GPU_DEVICE 0
 
@@ -116,7 +116,7 @@ void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj),
            PERCENT_DIFF_ERROR_THRESHOLD, fail);
 }
 
-void dumpMatrixToFile(bool should_i_dump, const char* filename, int ni, int nj,
+void dumpMatrixToFile(bool should_i_dump ,const char* filename, int ni, int nj,
                      fp32_t POLYBENCH_2D(C_cpu,NI,NJ,ni,nj),
                      fp32_t POLYBENCH_2D(C_baseline,NI,NJ,ni,nj),
                      fp32_t POLYBENCH_2D(C_single,NI,NJ,ni,nj),
@@ -302,11 +302,11 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
     __shared__ fp32_t As[TILE_SIZE][TILE_SIZE];
     __shared__ fp32_t Bs[TILE_SIZE][TILE_SIZE];
     
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    CudaDMAStrided<true, 16, 128, 128, DMA_THREADS_PER_LD, TILE_SIZE>
         dma_ld_a(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
                  nk * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
     
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    CudaDMAStrided<true, 16, 128, 128, DMA_THREADS_PER_LD, TILE_SIZE>
         dma_ld_b(1, COMPUTE_THREADS_PER_CTA, 
                  COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD,
                  nj * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
@@ -377,15 +377,10 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
             int aRow = by * TILE_SIZE;
             int aCol = t * TILE_SIZE;
             
-            // Boundary check for source pointer
-            if (aRow < ni && aCol < nk) {
-                fp32_t *src_ptr = &a[aRow * nk + aCol];
-                dma_ld_a.execute_dma(src_ptr, As);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
-            } else {
-                // Still need to participate in synchronization even if out of bounds
-                dma_ld_a.wait_for_dma_start();
-                dma_ld_a.finish_async_dma();
-            }
+            // Always call execute_dma to maintain synchronization
+            // execute_dma() internally calls wait_for_dma_start() and finish_async_dma()
+            fp32_t *src_ptr = &a[aRow * nk + aCol];
+            dma_ld_a.execute_dma(src_ptr, As);
         }
     }
     // DMA threads for B
@@ -396,15 +391,10 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
             int bRow = t * TILE_SIZE;
             int bCol = bx * TILE_SIZE;
             
-            // Boundary check for source pointer
-            if (bRow < nk && bCol < nj) {
-                fp32_t *src_ptr = &b[bRow * nj + bCol];
-                dma_ld_b.execute_dma(src_ptr, Bs);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
-            } else {
-                // Still need to participate in synchronization
-                dma_ld_b.wait_for_dma_start();
-                dma_ld_b.finish_async_dma();
-            }
+            // Always call execute_dma to maintain synchronization
+            // execute_dma() internally calls wait_for_dma_start() and finish_async_dma()
+            fp32_t *src_ptr = &b[bRow * nj + bCol];
+            dma_ld_b.execute_dma(src_ptr, Bs);
         }
     }
 }
@@ -419,11 +409,11 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
     __shared__ fp32_t As_1[TILE_SIZE][TILE_SIZE];
     __shared__ fp32_t Bs_1[TILE_SIZE][TILE_SIZE];
     
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    CudaDMAStrided<true, 16, 128, 128, DMA_THREADS_PER_LD, TILE_SIZE>
         dma_ld_a(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
                  nk * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
     
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    CudaDMAStrided<true, 16, 128, 128, DMA_THREADS_PER_LD, TILE_SIZE>
         dma_ld_b(1, COMPUTE_THREADS_PER_CTA, 
                  COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD,
                  nj * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
@@ -509,19 +499,13 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
             // Determine which buffer to load into (ping-pong)
             int buf_idx = t & 1;
             
-            // Boundary check for source pointer
-            if (aRow < ni && aCol < nk) {
-                fp32_t *src_ptr = &a[aRow * nk + aCol];
-                // Load into alternating buffer
-                if (buf_idx == 0) {
-                    dma_ld_a.execute_dma(src_ptr, As_0);
-                } else {
-                    dma_ld_a.execute_dma(src_ptr, As_1);
-                }
+            // Always call execute_dma to maintain synchronization
+            fp32_t *src_ptr = &a[aRow * nk + aCol];
+            // Load into alternating buffer
+            if (buf_idx == 0) {
+                dma_ld_a.execute_dma(src_ptr, As_0);
             } else {
-                // Still need to participate in synchronization even if out of bounds
-                dma_ld_a.wait_for_dma_start();
-                dma_ld_a.finish_async_dma();
+                dma_ld_a.execute_dma(src_ptr, As_1);
             }
         }
     }
@@ -536,19 +520,13 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
             // Determine which buffer to load into (ping-pong)
             int buf_idx = t & 1;
             
-            // Boundary check for source pointer
-            if (bRow < nk && bCol < nj) {
-                fp32_t *src_ptr = &b[bRow * nj + bCol];
-                // Load into alternating buffer
-                if (buf_idx == 0) {
-                    dma_ld_b.execute_dma(src_ptr, Bs_0);
-                } else {
-                    dma_ld_b.execute_dma(src_ptr, Bs_1);
-                }
+            // Always call execute_dma to maintain synchronization
+            fp32_t *src_ptr = &b[bRow * nj + bCol];
+            // Load into alternating buffer
+            if (buf_idx == 0) {
+                dma_ld_b.execute_dma(src_ptr, Bs_0);
             } else {
-                // Still need to participate in synchronization
-                dma_ld_b.wait_for_dma_start();
-                dma_ld_b.finish_async_dma();
+                dma_ld_b.execute_dma(src_ptr, Bs_1);
             }
         }
     }
