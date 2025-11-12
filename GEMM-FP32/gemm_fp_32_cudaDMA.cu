@@ -116,6 +116,132 @@ void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj),
            PERCENT_DIFF_ERROR_THRESHOLD, fail);
 }
 
+void dumpMatrixToFile(bool should_i_dump, const char* filename, int ni, int nj,
+                     fp32_t POLYBENCH_2D(C_cpu,NI,NJ,ni,nj),
+                     fp32_t POLYBENCH_2D(C_baseline,NI,NJ,ni,nj),
+                     fp32_t POLYBENCH_2D(C_single,NI,NJ,ni,nj),
+                     fp32_t POLYBENCH_2D(C_double,NI,NJ,ni,nj))
+{
+    if (!should_i_dump)
+        return;
+    FILE *fp = fopen(filename, "a");
+    if (fp == NULL) {
+        printf("Error: Could not open file %s for appending\n", filename);
+        return;
+    }
+    
+    fprintf(fp, "GEMM Output Matrix Dump\n");
+    fprintf(fp, "Matrix dimensions: %d x %d\n", ni, nj);
+    fprintf(fp, "Generated on: %s\n", __DATE__);
+    fprintf(fp, "========================================\n\n");
+    
+    // Dump CPU result
+    fprintf(fp, "=== Case 1: CPU Reference Implementation ===\n");
+    fprintf(fp, "Description: Sequential CPU GEMM computation\n\n");
+    for (int i = 0; i < ni; i++) {
+        for (int j = 0; j < nj; j++) {
+            fprintf(fp, "%.6e ", C_cpu[i][j]);
+        }
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, "\n");
+    
+    // Dump GPU Baseline result
+    fprintf(fp, "=== Case 2: GPU Baseline (Tiled GEMM) ===\n");
+    fprintf(fp, "Description: Standard tiled GEMM with shared memory, no warp specialization\n\n");
+    for (int i = 0; i < ni; i++) {
+        for (int j = 0; j < nj; j++) {
+            fprintf(fp, "%.6e ", C_baseline[i][j]);
+        }
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, "\n");
+    
+    // Dump cudaDMA Single-Buffer result
+    fprintf(fp, "=== Case 3: GPU cudaDMA Single-Buffer ===\n");
+    fprintf(fp, "Description: Warp-specialized GEMM with cudaDMA, single buffering\n");
+    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n", 
+            COMPUTE_THREADS_PER_CTA, DMA_THREADS_PER_LD);
+    for (int i = 0; i < ni; i++) {
+        for (int j = 0; j < nj; j++) {
+            fprintf(fp, "%.6e ", C_single[i][j]);
+        }
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, "\n");
+    
+    // Dump cudaDMA Double-Buffer result
+    fprintf(fp, "=== Case 4: GPU cudaDMA Double-Buffer ===\n");
+    fprintf(fp, "Description: Warp-specialized GEMM with cudaDMA, double buffering (ping-pong)\n");
+    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n", 
+            COMPUTE_THREADS_PER_CTA, DMA_THREADS_PER_LD);
+    for (int i = 0; i < ni; i++) {
+        for (int j = 0; j < nj; j++) {
+            fprintf(fp, "%.6e ", C_double[i][j]);
+        }
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, "\n");
+    
+    // Add statistical summary
+    fprintf(fp, "========================================\n");
+    fprintf(fp, "=== Statistical Summary ===\n\n");
+    
+    // Calculate differences
+    double max_diff_baseline = 0.0, max_diff_single = 0.0, max_diff_double = 0.0;
+    double avg_diff_baseline = 0.0, avg_diff_single = 0.0, avg_diff_double = 0.0;
+    int mismatch_baseline = 0, mismatch_single = 0, mismatch_double = 0;
+    
+    for (int i = 0; i < ni; i++) {
+        for (int j = 0; j < nj; j++) {
+            double diff_baseline = percentDiff(C_cpu[i][j], C_baseline[i][j]);
+            double diff_single = percentDiff(C_cpu[i][j], C_single[i][j]);
+            double diff_double = percentDiff(C_cpu[i][j], C_double[i][j]);
+            
+            avg_diff_baseline += diff_baseline;
+            avg_diff_single += diff_single;
+            avg_diff_double += diff_double;
+            
+            if (diff_baseline > max_diff_baseline) max_diff_baseline = diff_baseline;
+            if (diff_single > max_diff_single) max_diff_single = diff_single;
+            if (diff_double > max_diff_double) max_diff_double = diff_double;
+            
+            if (diff_baseline > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_baseline++;
+            if (diff_single > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_single++;
+            if (diff_double > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_double++;
+        }
+    }
+    
+    int total_elements = ni * nj;
+    avg_diff_baseline /= total_elements;
+    avg_diff_single /= total_elements;
+    avg_diff_double /= total_elements;
+    
+    fprintf(fp, "Comparison vs CPU Reference:\n");
+    fprintf(fp, "  GPU Baseline:\n");
+    fprintf(fp, "    Max difference: %.6f%%\n", max_diff_baseline);
+    fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_baseline);
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+            PERCENT_DIFF_ERROR_THRESHOLD, mismatch_baseline, total_elements);
+    fprintf(fp, "\n");
+    
+    fprintf(fp, "  cudaDMA Single-Buffer:\n");
+    fprintf(fp, "    Max difference: %.6f%%\n", max_diff_single);
+    fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_single);
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+            PERCENT_DIFF_ERROR_THRESHOLD, mismatch_single, total_elements);
+    fprintf(fp, "\n");
+    
+    fprintf(fp, "  cudaDMA Double-Buffer:\n");
+    fprintf(fp, "    Max difference: %.6f%%\n", max_diff_double);
+    fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_double);
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+            PERCENT_DIFF_ERROR_THRESHOLD, mismatch_double, total_elements);
+    
+    fclose(fp);
+    printf("Matrix outputs dumped to: %s\n", filename);
+}
+
 __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
                                 fp32_t *a, fp32_t *b, fp32_t *c)
 {
@@ -639,6 +765,14 @@ int main(int argc, char *argv[])
         printf("\n=== Comparing cudaDMA Double-Buffer GPU vs CPU ===\n");
         compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
     #endif
+
+    // Dump all matrix outputs to a single file
+    printf("\n=== Dumping Matrix Outputs ===\n");
+    dumpMatrixToFile(false, "gemm_output_dump.txt", ni, nj, 
+                     POLYBENCH_ARRAY(C), 
+                     POLYBENCH_ARRAY(C_outputFromGpu),
+                     POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single),
+                     POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
 
     POLYBENCH_FREE_ARRAY(A);
     POLYBENCH_FREE_ARRAY(B);  
