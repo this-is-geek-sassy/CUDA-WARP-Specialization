@@ -31,6 +31,9 @@
 
 #define RUN_ON_CPU
 
+// External timing variables from polybench
+extern double polybench_t_start, polybench_t_end;
+
 /**
  * Initialize input arrays
  */
@@ -150,7 +153,7 @@ __global__ void jacobi2D_kernel_shared(int n, DATA_TYPE *A, DATA_TYPE *B)
 }
 
 /**
- * Texture memory optimized GPU kernel
+ * Texture memory optimized GPU kernel (simple version - no tiling)
  * Uses texture memory for spatial locality and caching benefits
  */
 __global__ void jacobi2D_kernel_texture(int n, cudaTextureObject_t texA, DATA_TYPE *B)
@@ -168,6 +171,66 @@ __global__ void jacobi2D_kernel_texture(int n, cudaTextureObject_t texA, DATA_TY
         DATA_TYPE bottom = tex2D<DATA_TYPE>(texA, j, i + 1);
 
         B[i * n + j] = 0.2f * (center + left + right + top + bottom);
+    }
+}
+
+/**
+ * Hybrid GPU kernel: Texture + Shared Memory
+ * Uses texture memory for input reads, then loads into shared memory tiles
+ * Combines texture caching with shared memory's explicit data reuse
+ */
+__global__ void jacobi2D_kernel_texture_shared(int n, cudaTextureObject_t texA, DATA_TYPE *B)
+{
+    __shared__ DATA_TYPE tile[TILE_Y][TILE_X];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Global indices
+    int i = blockIdx.y * blockDim.y + ty;
+    int j = blockIdx.x * blockDim.x + tx;
+
+    // Load center tile data from texture memory into shared memory
+    if (i < n && j < n)
+    {
+        tile[ty + 1][tx + 1] = tex2D<DATA_TYPE>(texA, j, i);
+    }
+
+    // Load halo regions from texture memory
+    // Top halo
+    if (ty == 0 && i > 0)
+    {
+        tile[0][tx + 1] = tex2D<DATA_TYPE>(texA, j, i - 1);
+    }
+
+    // Bottom halo
+    if (ty == blockDim.y - 1 && i < n - 1)
+    {
+        tile[ty + 2][tx + 1] = tex2D<DATA_TYPE>(texA, j, i + 1);
+    }
+
+    // Left halo
+    if (tx == 0 && j > 0)
+    {
+        tile[ty + 1][0] = tex2D<DATA_TYPE>(texA, j - 1, i);
+    }
+
+    // Right halo
+    if (tx == blockDim.x - 1 && j < n - 1)
+    {
+        tile[ty + 1][tx + 2] = tex2D<DATA_TYPE>(texA, j + 1, i);
+    }
+
+    __syncthreads();
+
+    // Compute stencil from shared memory (avoiding boundaries)
+    if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
+    {
+        B[i * n + j] = 0.2f * (tile[ty + 1][tx + 1] + // center
+                               tile[ty + 1][tx] +     // left
+                               tile[ty + 1][tx + 2] + // right
+                               tile[ty + 2][tx + 1] + // bottom
+                               tile[ty][tx + 1]);     // top
     }
 }
 
@@ -246,22 +309,24 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
     dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
               (unsigned int)ceil(((float)n) / ((float)block.y)));
 
-    /* Start timer */
-    polybench_start_instruments;
-
-    // Run Jacobi iterations
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
+        polybench_start_instruments;
         jacobi2D_kernel_baseline<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
     }
 
-    /* Stop and print timer */
+    /* Print aggregated kernel time */
     printf("\n=== GPU Time (Baseline - No Shared Memory) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     // Copy results back
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -273,7 +338,7 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
 }
 
 /**
- * Run Jacobi2D on GPU with texture memory optimization
+ * Run Jacobi2D on GPU with texture memory optimization (simple)
  */
 void runJacobi2DCUDA_texture(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n),
                              DATA_TYPE POLYBENCH_2D(B, N, N, n, n),
@@ -327,29 +392,117 @@ void runJacobi2DCUDA_texture(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
               (unsigned int)ceil(((float)n) / ((float)block.y)));
 
-    /* Start timer */
-    polybench_start_instruments;
-
-    // Run Jacobi iterations
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
-        // Compute B from texture (which contains A)
+        polybench_start_instruments;
         jacobi2D_kernel_texture<<<grid, block>>>(n, texA, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
 
-        // Only copy interior values (matching the copy kernel behavior)
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
 
-        // Update texture with new A values for next iteration
+        // Update texture (not measured)
         cudaMemcpy2DToArray(cuArray, 0, 0, A_gpu, n * sizeof(DATA_TYPE),
                             n * sizeof(DATA_TYPE), n, cudaMemcpyDeviceToDevice);
     }
 
-    /* Stop and print timer */
-    printf("\n=== GPU Time (Texture Memory Optimized) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    /* Print aggregated kernel time */
+    printf("\n=== GPU Time (Texture Memory) ===\n");
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
+
+    // Copy results back (A contains the final values after copy-back)
+    cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
+    cudaMemcpy(B_outputFromGpu, B_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
+
+    // Cleanup
+    cudaDestroyTextureObject(texA);
+    cudaFreeArray(cuArray);
+    cudaFree(A_gpu);
+    cudaFree(B_gpu);
+}
+
+/**
+ * Run Jacobi2D on GPU with hybrid texture+shared memory optimization
+ */
+void runJacobi2DCUDA_texture_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n),
+                                    DATA_TYPE POLYBENCH_2D(B, N, N, n, n),
+                                    DATA_TYPE POLYBENCH_2D(A_outputFromGpu, N, N, n, n),
+                                    DATA_TYPE POLYBENCH_2D(B_outputFromGpu, N, N, n, n))
+{
+    DATA_TYPE *A_gpu, *B_gpu;
+    cudaArray *cuArray;
+    cudaTextureObject_t texA = 0;
+
+    // Allocate device memory
+    cudaMalloc(&A_gpu, n * n * sizeof(DATA_TYPE));
+    cudaMalloc(&B_gpu, n * n * sizeof(DATA_TYPE));
+
+    // Create channel descriptor
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<DATA_TYPE>();
+
+    // Allocate CUDA array for texture
+    cudaMallocArray(&cuArray, &channelDesc, n, n);
+
+    // Copy data to CUDA array
+    cudaMemcpy2DToArray(cuArray, 0, 0, A, n * sizeof(DATA_TYPE),
+                        n * sizeof(DATA_TYPE), n, cudaMemcpyHostToDevice);
+
+    // Also copy A to device memory (needed for the copy kernel)
+    cudaMemcpy(A_gpu, A, n * n * sizeof(DATA_TYPE), cudaMemcpyHostToDevice);
+
+    // Specify texture resource
+    struct cudaResourceDesc resDesc;
+    memset(&resDesc, 0, sizeof(resDesc));
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = cuArray;
+
+    // Specify texture object parameters
+    struct cudaTextureDesc texDesc;
+    memset(&texDesc, 0, sizeof(texDesc));
+    texDesc.addressMode[0] = cudaAddressModeClamp;
+    texDesc.addressMode[1] = cudaAddressModeClamp;
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.readMode = cudaReadModeElementType;
+    texDesc.normalizedCoords = 0;
+
+    // Create texture object
+    cudaCreateTextureObject(&texA, &resDesc, &texDesc, NULL);
+
+    // Copy B array to device
+    cudaMemcpy(B_gpu, B, n * n * sizeof(DATA_TYPE), cudaMemcpyHostToDevice);
+
+    // Setup execution configuration
+    dim3 block(DIM_THREAD_BLOCK_X, DIM_THREAD_BLOCK_Y);
+    dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
+              (unsigned int)ceil(((float)n) / ((float)block.y)));
+
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
+    for (int t = 0; t < tsteps; t++)
+    {
+        polybench_start_instruments;
+        jacobi2D_kernel_texture_shared<<<grid, block>>>(n, texA, B_gpu);
+        cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
+        jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
+        cudaDeviceSynchronize();
+
+        // Update texture (not measured)
+        cudaMemcpy2DToArray(cuArray, 0, 0, A_gpu, n * sizeof(DATA_TYPE),
+                            n * sizeof(DATA_TYPE), n, cudaMemcpyDeviceToDevice);
+    }
+
+    /* Print aggregated kernel time */
+    printf("\n=== GPU Time (Texture + Shared Memory Hybrid) ===\n");
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     // Copy results back (A contains the final values after copy-back)
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -385,22 +538,24 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
     dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
               (unsigned int)ceil(((float)n) / ((float)block.y)));
 
-    /* Start timer */
-    polybench_start_instruments;
-
-    // Run Jacobi iterations
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
+        polybench_start_instruments;
         jacobi2D_kernel_shared<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
     }
 
-    /* Stop and print timer */
+    /* Print aggregated kernel time */
     printf("\n=== GPU Time (Shared Memory Optimized) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     // Copy results back
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -456,6 +611,8 @@ int main(int argc, char **argv)
     POLYBENCH_2D_ARRAY_DECL(b_outputFromGpu_shared, DATA_TYPE, N, N, n, n);
     POLYBENCH_2D_ARRAY_DECL(a_outputFromGpu_texture, DATA_TYPE, N, N, n, n);
     POLYBENCH_2D_ARRAY_DECL(b_outputFromGpu_texture, DATA_TYPE, N, N, n, n);
+    POLYBENCH_2D_ARRAY_DECL(a_outputFromGpu_texture_shared, DATA_TYPE, N, N, n, n);
+    POLYBENCH_2D_ARRAY_DECL(b_outputFromGpu_texture_shared, DATA_TYPE, N, N, n, n);
 
     /* Initialize arrays */
     init_array(n, POLYBENCH_ARRAY(a), POLYBENCH_ARRAY(b));
@@ -501,6 +658,16 @@ int main(int argc, char **argv)
                             POLYBENCH_ARRAY(a_outputFromGpu_texture),
                             POLYBENCH_ARRAY(b_outputFromGpu_texture));
 
+    /* Run hybrid texture+shared memory optimized GPU version */
+    POLYBENCH_2D_ARRAY_DECL(a_temp4, DATA_TYPE, N, N, n, n);
+    POLYBENCH_2D_ARRAY_DECL(b_temp4, DATA_TYPE, N, N, n, n);
+    memcpy(a_temp4, a, n * n * sizeof(DATA_TYPE));
+    memcpy(b_temp4, b, n * n * sizeof(DATA_TYPE));
+
+    runJacobi2DCUDA_texture_shared(tsteps, n, POLYBENCH_ARRAY(a_temp4), POLYBENCH_ARRAY(b_temp4),
+                                   POLYBENCH_ARRAY(a_outputFromGpu_texture_shared),
+                                   POLYBENCH_ARRAY(b_outputFromGpu_texture_shared));
+
 #ifdef RUN_ON_CPU
     // Skip CPU execution for very large datasets (>= 8192)
     if (n < 8192)
@@ -526,6 +693,11 @@ int main(int argc, char **argv)
         printf("\n=== Validation: Texture Memory GPU vs CPU ===\n");
         compareResults(n, POLYBENCH_ARRAY(a), POLYBENCH_ARRAY(a_outputFromGpu_texture),
                        POLYBENCH_ARRAY(b), POLYBENCH_ARRAY(b_outputFromGpu_texture));
+
+        /* Compare results - hybrid texture+shared memory vs CPU */
+        printf("\n=== Validation: Texture+Shared Memory GPU vs CPU ===\n");
+        compareResults(n, POLYBENCH_ARRAY(a), POLYBENCH_ARRAY(a_outputFromGpu_texture_shared),
+                       POLYBENCH_ARRAY(b), POLYBENCH_ARRAY(b_outputFromGpu_texture_shared));
     }
     else
     {
@@ -546,12 +718,16 @@ int main(int argc, char **argv)
     POLYBENCH_FREE_ARRAY(b_outputFromGpu_shared);
     POLYBENCH_FREE_ARRAY(a_outputFromGpu_texture);
     POLYBENCH_FREE_ARRAY(b_outputFromGpu_texture);
+    POLYBENCH_FREE_ARRAY(a_outputFromGpu_texture_shared);
+    POLYBENCH_FREE_ARRAY(b_outputFromGpu_texture_shared);
     POLYBENCH_FREE_ARRAY(a_temp1);
     POLYBENCH_FREE_ARRAY(b_temp1);
     POLYBENCH_FREE_ARRAY(a_temp2);
     POLYBENCH_FREE_ARRAY(b_temp2);
     POLYBENCH_FREE_ARRAY(a_temp3);
     POLYBENCH_FREE_ARRAY(b_temp3);
+    POLYBENCH_FREE_ARRAY(a_temp4);
+    POLYBENCH_FREE_ARRAY(b_temp4);
 
     printf("\n========================================\n");
     printf("Execution completed successfully!\n");
