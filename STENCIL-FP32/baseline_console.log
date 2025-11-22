@@ -8,19 +8,25 @@ Thread block: 32x8
 
 
 === GPU Time (Baseline - No Shared Memory) ===
-0.007987
+0.007983
 
 === GPU Time (Shared Memory Optimized) ===
-0.008721
+0.008688
+
+=== GPU Time (Texture Memory Optimized) ===
+0.013533
 
 === CPU Time ===
-0.027432
+0.028558
 
 === Validation: Baseline GPU vs CPU ===
 Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
 
 === Validation: Shared Memory GPU vs CPU ===
 Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
+
+=== Validation: Texture Memory GPU vs CPU ===
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 137998
 
 ========================================
 Execution completed successfully!
