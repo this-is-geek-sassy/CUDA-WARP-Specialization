@@ -59,7 +59,7 @@
 
 #ifndef DATA_TYPE
 #define DATA_TYPE float
-#define DATA_PRINTF_MODIFIER "%0.2lf "
+#define DATA_PRINTF_MODIFIER "%0.6lf "
 #endif
 
 /* Thread block dimensions for baseline kernel */

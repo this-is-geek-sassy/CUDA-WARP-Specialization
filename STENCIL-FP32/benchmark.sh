@@ -95,7 +95,7 @@ for dataset in "${DATASETS[@]}"; do
         echo "  Run $i/5..." | tee -a "$LOG_FILE"
         
         # Execute and capture output
-        output=$(./jacobi2D_cudaDMA 2>&1)
+        output=$(./jacobi2D_cudaDMA 2>&1 | tee last_console.log)
         
         # Check for CPU-GPU mismatches
         mismatch_baseline=$(echo "$output" | grep "Baseline.*Non-Matching CPU-GPU Outputs" | awk '{print $NF}')

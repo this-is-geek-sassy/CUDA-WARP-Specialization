@@ -302,7 +302,7 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
 /**
  * Print array (for debugging)
  */
-static void print_array(int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n))
+static void print_array(int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n), FILE* fp=stderr)
 {
     int i, j;
 
@@ -310,12 +310,12 @@ static void print_array(int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n))
     {
         for (j = 0; j < n; j++)
         {
-            fprintf(stderr, DATA_PRINTF_MODIFIER, A[i][j]);
+            fprintf(fp, DATA_PRINTF_MODIFIER, A[i][j]);
             if ((i * n + j) % 20 == 0)
-                fprintf(stderr, "\n");
+                fprintf(fp, "\n");
         }
     }
-    fprintf(stderr, "\n");
+    fprintf(fp, "\n");
 }
 
 /**
@@ -345,6 +345,17 @@ int main(int argc, char **argv)
 
     /* Initialize arrays */
     init_array(n, POLYBENCH_ARRAY(a), POLYBENCH_ARRAY(b));
+
+    // print a and b array into a file here after init
+    FILE *fp_a = fopen("array_a.txt", "w");
+    FILE *fp_b = fopen("array_b.txt", "w");
+    
+    print_array(n, POLYBENCH_ARRAY(a), fp_a);
+    print_array(n, POLYBENCH_ARRAY(b), fp_b);
+    fclose(fp_a);
+    fclose(fp_b);
+    // print_array(n, POLYBENCH_ARRAY(a));
+    // print_array(n, POLYBENCH_ARRAY(b));
 
     /* Run baseline GPU version (no shared memory) */
     POLYBENCH_2D_ARRAY_DECL(a_temp1, DATA_TYPE, N, N, n, n);
