@@ -1,0 +1,109 @@
+# Makefile for Jacobi 2D Baseline with different dataset sizes
+# Usage: make DATASET=<dataset_name>
+# Example: make DATASET=MINI_DATASET
+
+EXECUTABLE := jacobi2D_baseline
+CUFILES := jacobi2D_baseline.cu
+
+# Compiler and flags
+NVCC := nvcc
+NVCCFLAGS := -O3 -arch=sm_86
+
+# Dataset size (default to STANDARD_DATASET)
+DATASET ?= STANDARD_DATASET
+
+# Valid dataset options
+VALID_DATASETS := MINI_DATASET SMALL_DATASET STANDARD_DATASET LARGE_DATASET \
+                  EXTRALARGE_DATASET HUGE_DATASET HUMONGOUS_DATASET
+
+# Check if dataset is valid
+ifeq ($(filter $(DATASET),$(VALID_DATASETS)),)
+    $(error Invalid DATASET: $(DATASET). Valid options are: $(VALID_DATASETS))
+endif
+
+# Dataset configurations:
+# MINI_DATASET:        N=128,    TSTEPS=20
+# SMALL_DATASET:       N=256,    TSTEPS=40
+# STANDARD_DATASET:    N=1024,   TSTEPS=100    (default)
+# LARGE_DATASET:       N=2048,   TSTEPS=200
+# EXTRALARGE_DATASET:  N=4096,   TSTEPS=500
+# HUGE_DATASET:        N=8192,   TSTEPS=1000
+# HUMONGOUS_DATASET:   N=16384,  TSTEPS=2000
+
+# Add dataset flag
+DATASET_FLAG := -D$(DATASET)
+
+.PHONY: all clean run benchmark help
+
+all: $(EXECUTABLE)
+
+$(EXECUTABLE): $(CUFILES)
+	@echo "=========================================="
+	@echo "Building Jacobi 2D Baseline"
+	@echo "Dataset: $(DATASET)"
+	@echo "=========================================="
+	$(NVCC) $(NVCCFLAGS) $(DATASET_FLAG) $(CUFILES) -o $(EXECUTABLE)
+	@echo "Build complete: $(EXECUTABLE)"
+
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f $(EXECUTABLE) *~ *.o
+
+run: $(EXECUTABLE)
+	@echo "=========================================="
+	@echo "Running Jacobi 2D Baseline"
+	@echo "Dataset: $(DATASET)"
+	@echo "=========================================="
+	./$(EXECUTABLE)
+
+# Build and run for all dataset sizes
+benchmark: clean
+	@echo "=========================================="
+	@echo "Benchmarking All Dataset Sizes"
+	@echo "=========================================="
+	@echo ""
+	@for dataset in $(VALID_DATASETS); do \
+		echo "=========================================="; \
+		echo "Building and running: $$dataset"; \
+		echo "=========================================="; \
+		$(MAKE) DATASET=$$dataset clean all run || exit 1; \
+		echo ""; \
+	done
+	@echo "=========================================="
+	@echo "Benchmark Complete!"
+	@echo "=========================================="
+
+# Quick test with small datasets
+test: clean
+	@echo "Running quick test with MINI_DATASET..."
+	$(MAKE) DATASET=MINI_DATASET all run
+
+# Help target
+help:
+	@echo "=========================================="
+	@echo "Jacobi 2D Baseline Makefile"
+	@echo "=========================================="
+	@echo ""
+	@echo "Usage:"
+	@echo "  make [DATASET=<name>]     - Build with specified dataset"
+	@echo "  make run [DATASET=<name>] - Build and run with dataset"
+	@echo "  make clean                - Remove build artifacts"
+	@echo "  make benchmark            - Run all dataset sizes"
+	@echo "  make test                 - Quick test with MINI_DATASET"
+	@echo "  make help                 - Show this help message"
+	@echo ""
+	@echo "Dataset Options:"
+	@echo "  MINI_DATASET        - N=128,   TSTEPS=20"
+	@echo "  SMALL_DATASET       - N=256,   TSTEPS=40"
+	@echo "  STANDARD_DATASET    - N=1024,  TSTEPS=100  (default)"
+	@echo "  LARGE_DATASET       - N=2048,  TSTEPS=200"
+	@echo "  EXTRALARGE_DATASET  - N=4096,  TSTEPS=500"
+	@echo "  HUGE_DATASET        - N=8192,  TSTEPS=1000"
+	@echo "  HUMONGOUS_DATASET   - N=16384, TSTEPS=2000"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                              - Build with STANDARD_DATASET"
+	@echo "  make DATASET=LARGE_DATASET        - Build with LARGE_DATASET"
+	@echo "  make run DATASET=SMALL_DATASET    - Build and run SMALL_DATASET"
+	@echo "  make benchmark                    - Test all datasets"
+	@echo "=========================================="
