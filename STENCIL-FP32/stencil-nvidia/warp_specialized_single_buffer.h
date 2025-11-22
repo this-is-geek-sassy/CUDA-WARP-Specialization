@@ -17,7 +17,7 @@
 #ifndef __WARP_SPECIALIZED_SINGLE_BUFFER__
 #define __WARP_SPECIALIZED_SINGLE_BUFFER__
 
-#include "../../../include/cudaDMAv2.h"
+#include "../cudaDMAv2.h"
 
 // The stencil function to be performed
 #include "stencil_math.h"
