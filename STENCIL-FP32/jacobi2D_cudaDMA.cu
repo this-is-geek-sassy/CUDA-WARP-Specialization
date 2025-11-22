@@ -34,6 +34,9 @@
 
 #define RUN_ON_CPU
 
+// External timing variables from polybench
+extern double polybench_t_start, polybench_t_end;
+
 /**
  * Initialize input arrays
  */
@@ -338,19 +341,24 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
     dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
               (unsigned int)ceil(((float)n) / ((float)block.y)));
 
-    polybench_start_instruments;
-
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
+        polybench_start_instruments;
         jacobi2D_kernel_baseline<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
     }
 
+    /* Print aggregated kernel time */
     printf("\n=== GPU Time (Baseline - No Shared Memory) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
     cudaMemcpy(B_outputFromGpu, B_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -379,19 +387,24 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
     dim3 grid((unsigned int)ceil(((float)n) / ((float)block.x)),
               (unsigned int)ceil(((float)n) / ((float)block.y)));
 
-    polybench_start_instruments;
-
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
+        polybench_start_instruments;
         jacobi2D_kernel_shared<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
     }
 
+    /* Print aggregated kernel time */
     printf("\n=== GPU Time (Shared Memory Optimized) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
     cudaMemcpy(B_outputFromGpu, B_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -425,19 +438,24 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     dim3 copy_block(256);
     dim3 copy_grid((n * n + 255) / 256);
 
-    polybench_start_instruments;
-
+    // Run Jacobi iterations - measure only kernel execution time
+    double total_kernel_time = 0.0;
     for (int t = 0; t < tsteps; t++)
     {
+        polybench_start_instruments;
         jacobi2D_kernel_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+        polybench_stop_instruments;
+        total_kernel_time += polybench_t_end - polybench_t_start;
+
+        // Copy kernel (not measured)
         jacobi2D_kernel_copy_cudaDMA<<<copy_grid, copy_block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
     }
 
+    /* Print aggregated kernel time */
     printf("\n=== GPU Time (cudaDMA Warp-Specialized) ===\n");
-    polybench_stop_instruments;
-    polybench_print_instruments;
+    printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
     cudaMemcpy(B_outputFromGpu, B_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);

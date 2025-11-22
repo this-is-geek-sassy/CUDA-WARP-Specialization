@@ -27,7 +27,8 @@ echo "" | tee -a "$LOG_FILE"
 extract_time() {
     local pattern=$1
     local output=$2
-    echo "$output" | grep -A 1 "$pattern" | tail -1 | awk '{print $1}'
+    # Look for "Total kernel execution time: X.XXXXXX" format
+    echo "$output" | grep -A 1 "$pattern" | grep "Total kernel execution time" | awk '{print $5}'
 }
 
 # Process each dataset
@@ -149,12 +150,32 @@ for dataset in "${DATASETS[@]}"; do
     avg_baseline=$(echo "scale=6; $sum_baseline / 5" | bc -l)
     avg_shared=$(echo "scale=6; $sum_shared / 5" | bc -l)
     avg_cudadma=$(echo "scale=6; $sum_cudadma / 5" | bc -l)
-    avg_cpu=$(echo "scale=6; $sum_cpu / 5" | bc -l)
     
-    # Calculate speedups over baseline
-    speedup_shared=$(echo "scale=3; $avg_baseline / $avg_shared" | bc -l)
-    speedup_cudadma=$(echo "scale=3; $avg_baseline / $avg_cudadma" | bc -l)
-    speedup_cpu=$(echo "scale=3; $avg_baseline / $avg_cpu" | bc -l)
+    # Check if we have valid CPU time
+    if [ -n "$sum_cpu" ] && [ "$sum_cpu" != "0" ]; then
+        avg_cpu=$(echo "scale=6; $sum_cpu / 5" | bc -l)
+    else
+        avg_cpu="N/A"
+    fi
+    
+    # Calculate speedups over baseline (only if values are valid and non-zero)
+    if [ -n "$avg_shared" ] && [ "$avg_shared" != "0" ] && [ "$avg_baseline" != "0" ]; then
+        speedup_shared=$(echo "scale=3; $avg_baseline / $avg_shared" | bc -l)
+    else
+        speedup_shared="N/A"
+    fi
+    
+    if [ -n "$avg_cudadma" ] && [ "$avg_cudadma" != "0" ] && [ "$avg_baseline" != "0" ]; then
+        speedup_cudadma=$(echo "scale=3; $avg_baseline / $avg_cudadma" | bc -l)
+    else
+        speedup_cudadma="N/A"
+    fi
+    
+    if [ "$avg_cpu" != "N/A" ] && [ "$avg_cpu" != "0" ] && [ "$avg_baseline" != "0" ]; then
+        speedup_cpu=$(echo "scale=3; $avg_baseline / $avg_cpu" | bc -l)
+    else
+        speedup_cpu="N/A"
+    fi
     
     # Store results
     results["${dataset}_dim"]=$DIM
