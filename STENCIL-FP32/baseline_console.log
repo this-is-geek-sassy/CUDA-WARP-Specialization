@@ -1,23 +1,26 @@
 ========================================
 Jacobi 2D Stencil - Baseline with Shared Memory Optimization
 ========================================
-Dataset size: 1024x1024
-Time steps: 100
+Dataset size: 4096x4096
+Time steps: 500
 Thread block: 32x8
 ========================================
 
 
 === GPU Time (Baseline - No Shared Memory) ===
-0.007983
+Total kernel execution time: 0.273697
 
 === GPU Time (Shared Memory Optimized) ===
-0.008688
+Total kernel execution time: 0.330709
 
-=== GPU Time (Texture Memory Optimized) ===
-0.013533
+=== GPU Time (Texture Memory) ===
+Total kernel execution time: 0.365820
+
+=== GPU Time (Texture + Shared Memory Hybrid) ===
+Total kernel execution time: 0.316284
 
 === CPU Time ===
-0.028558
+6.654183
 
 === Validation: Baseline GPU vs CPU ===
 Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
@@ -26,7 +29,10 @@ Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
 Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
 
 === Validation: Texture Memory GPU vs CPU ===
-Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 137998
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
+
+=== Validation: Texture+Shared Memory GPU vs CPU ===
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
 
 ========================================
 Execution completed successfully!

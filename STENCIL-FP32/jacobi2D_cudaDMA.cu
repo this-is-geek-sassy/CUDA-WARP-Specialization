@@ -26,8 +26,8 @@
 #include "../../polybenchGpu/common/polybench.h"
 #include "../../polybenchGpu/common/polybenchUtilFuncts.h"
 
-// Include cudaDMA for warp specialization
-#include "cudaDMA.h"
+// Include cudaDMA for warp specialization (v2 for modern architectures)
+#include "cudaDMAv2.h"
 
 // Error threshold for validation
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
@@ -247,6 +247,8 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
 {
     __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
 
+    // printf("In jacobi2D_kernel_pure_cudaDMA\n");
+
     // Create cudaDMA object for strided transfer
     // cudaDMAStrided<DO_SYNC, ALIGNMENT, BYTES_PER_ELMT, DMA_THREADS, NUM_ELMTS>
     //   BYTES_PER_ELMT = bytes per row (CUDADMA_TILE_X * sizeof(float))
@@ -254,10 +256,11 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     const int BYTES_PER_ROW = sizeof(DATA_TYPE) * CUDADMA_TILE_X;
 
     // Constructor: (dma_id, num_compute_threads, dma_threadIdx_start, src_stride, dst_stride)
-    cudaDMAStrided<true, 16, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
+    CudaDMAStrided<true, 16, BYTES_PER_ROW, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
         dma_loader(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
                    n * sizeof(DATA_TYPE),               // src stride (row stride in global memory)
                    CUDADMA_TILE_X * sizeof(DATA_TYPE)); // dst stride (row stride in shared memory)
+    // printf("After cudaDMAStrided constructor\n");
 
     // Determine block-level coordinates for the compute region and the tile origin
     int block_i = blockIdx.y * CUDADMA_COMPUTE_Y;
@@ -274,20 +277,6 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     if (dma_loader.owns_this_thread())
     {
         // DMA threads: perform hardware DMA transfer
-        // Zero out the entire tile first to handle out-of-bounds regions
-        int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
-        for (int idx = threadIdx.x - COMPUTE_THREADS_PER_CTA;
-             idx < total_tile_elements;
-             idx += DMA_THREADS_PER_LD)
-        {
-            int ii = idx / CUDADMA_TILE_X;
-            int jj = idx % CUDADMA_TILE_X;
-            tile[ii][jj] = 0.0f;
-        }
-
-        // Wait for compute threads to signal start
-        dma_loader.wait_for_dma_start();
-
         // Check if tile is fully in bounds - only transfer if safe
         bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
                                     (start_i + CUDADMA_TILE_Y <= n) &&
@@ -296,33 +285,37 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
         if (tile_fully_in_bounds)
         {
             // Safe to do DMA transfer - entire tile is within array bounds
-            dma_loader.execute_dma(src_ptr, tile);
+            #if __CUDA_ARCH__ >= 350
+                        dma_loader.execute_dma<true>(src_ptr, tile);
+            #else
+                        dma_loader.execute_dma(src_ptr, tile);
+            #endif
         }
         else
         {
             // Edge block: manually load valid elements (software fallback for boundary)
-            // Each DMA thread loads full rows in a strided pattern
+            // Zero out the entire tile first to handle out-of-bounds regions
+            int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
             int dma_tid = threadIdx.x - COMPUTE_THREADS_PER_CTA; // 0-31 for DMA threads
-            for (int ii = dma_tid; ii < CUDADMA_TILE_Y; ii += DMA_THREADS_PER_LD)
+            for (int idx = dma_tid;
+                    idx < total_tile_elements;
+                    idx += DMA_THREADS_PER_LD)
             {
+                int ii = idx / CUDADMA_TILE_X;
+                int jj = idx % CUDADMA_TILE_X;
                 int gi = start_i + ii;
-                if (gi >= 0 && gi < n)
+                int gj = start_j + jj;
+
+                if (gi >= 0 && gi < n && gj >= 0 && gj < n)
                 {
-                    for (int jj = 0; jj < CUDADMA_TILE_X; jj++)
-                    {
-                        int gj = start_j + jj;
-                        if (gj >= 0 && gj < n)
-                        {
-                            tile[ii][jj] = A[gi * n + gj];
-                        }
-                        // else: already zeroed above
-                    }
+                    tile[ii][jj] = A[gi * n + gj];
                 }
-                // else: entire row out of bounds, already zeroed
+                else
+                {
+                    tile[ii][jj] = 0.0f;
+                }
             }
         }
-
-        dma_loader.finish_async_dma();
     }
     else if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
@@ -576,8 +569,12 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     for (int t = 0; t < tsteps; t++)
     {
         polybench_start_instruments;
-        jacobi2D_kernel_pure_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
-        cudaDeviceSynchronize();
+        jacobi2D_kernel_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
+        cudaError_t err = cudaDeviceSynchronize();
+        if (err != cudaSuccess)
+        {
+            printf("CUDA Error after kernel launch: %s\n", cudaGetErrorString(err));
+        }
         polybench_stop_instruments;
         total_kernel_time += polybench_t_end - polybench_t_start;
 
