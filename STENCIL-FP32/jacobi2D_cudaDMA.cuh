@@ -70,23 +70,18 @@
 #define TILE_Y (DIM_THREAD_BLOCK_Y + 2) // +2 for top and bottom halo
 
 /* cudaDMA configuration */
-#define COMPUTE_THREADS_PER_CTA 256 // Compute threads
-#define DMA_THREADS_PER_LD 32       // DMA threads per loader (1 warp)
-#define NUM_DMA_LOADERS 1           // 1 DMA loader for input array
-#define TOTAL_THREADS (COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD)
-
-// Compute thread configuration (16x16 compute threads)
-#define COMPUTE_THREADS_X 16
-#define COMPUTE_THREADS_Y 16
-
-// Tile size for cudaDMA version (includes halo)
-// Match GEMM's 32x32 tile pattern for proper cudaDMA alignment
-// GEMM uses 32x32 tiles with 128 bytes/row (32 floats × 4 bytes)
-#define CUDADMA_TILE_X 32 // 30 compute + 2 halo = 32 total (128 bytes)
-#define CUDADMA_TILE_Y 32 // 30 compute + 2 halo = 32 total
-
-// Adjust compute threads for cudaDMA to match tile requirements
+// Use 900 compute threads (30x30) for 1:1 mapping with stencil operations
+// This enables perfect coalescing: each thread handles exactly 1 stencil point
 #define CUDADMA_COMPUTE_X 30
 #define CUDADMA_COMPUTE_Y 30
+#define COMPUTE_THREADS_PER_CTA (CUDADMA_COMPUTE_X * CUDADMA_COMPUTE_Y)                // 900 threads
+#define DMA_THREADS_PER_LD 32                                                          // DMA threads per loader (1 warp)
+#define NUM_DMA_LOADERS 1                                                              // 1 DMA loader for input array
+#define TOTAL_THREADS (COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD) // 932 threads
+
+// Tile size for cudaDMA version (includes halo)
+// 32x32 tile for proper alignment (128 bytes/row = 32 floats × 4 bytes)
+#define CUDADMA_TILE_X 32 // 30 compute + 2 halo = 32 total
+#define CUDADMA_TILE_Y 32 // 30 compute + 2 halo = 32 total
 
 #endif /* !JACOBI2D_CUDADMA_CUH */

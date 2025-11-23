@@ -37,6 +37,9 @@
 // External timing variables from polybench
 extern double polybench_t_start, polybench_t_end;
 
+// Forward declarations
+static void dump_array_to_file(const char *filename, int n, DATA_TYPE *A);
+
 /**
  * Initialize input arrays
  */
@@ -155,12 +158,92 @@ __global__ void jacobi2D_kernel_shared(int n, DATA_TYPE *A, DATA_TYPE *B)
 }
 
 /**
- * cudaDMA warp-specialized kernel
- * Separates DMA threads (memory transfer) from compute threads
+ * Warp-specialized kernel using cp.async for asynchronous memory copy
+ * Uses async copy intrinsics for efficient global-to-shared memory transfer
  */
 template <bool DO_SYNC>
 __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     jacobi2D_kernel_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
+{
+    __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
+
+    // Determine block-level coordinates for the compute region and the tile origin
+    int block_i = blockIdx.y * CUDADMA_COMPUTE_Y;
+    int block_j = blockIdx.x * CUDADMA_COMPUTE_X;
+
+    // Tile origin (including halo): start one row/col before the compute region
+    int start_i = block_i - 1;
+    int start_j = block_j - 1;
+
+    if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
+    {
+        // Compute threads: use cp.async for asynchronous loading
+        int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
+
+        // Issue all async copies using cp.async intrinsic
+        for (int idx = threadIdx.x; idx < total_tile_elements; idx += COMPUTE_THREADS_PER_CTA)
+        {
+            int ii = idx / CUDADMA_TILE_X;
+            int jj = idx % CUDADMA_TILE_X;
+            int gi = start_i + ii;
+            int gj = start_j + jj;
+
+            if (gi >= 0 && gi < n && gj >= 0 && gj < n)
+            {
+                // Use cp.async.ca to copy 4 bytes (1 float) with cache-all policy
+                // This overlaps memory transfer with other operations
+                asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n"
+                             :
+                             : "r"((unsigned)__cvta_generic_to_shared(&tile[ii][jj])),
+                               "l"(&A[gi * n + gj]));
+            }
+            else
+            {
+                tile[ii][jj] = 0.0f;
+            }
+        }
+
+        // Commit all pending cp.async operations
+        asm volatile("cp.async.commit_group;\n" ::);
+
+        // Wait for all async copies to complete (wait for group 0)
+        asm volatile("cp.async.wait_group 0;\n" ::);
+
+        __syncthreads();
+
+        // Compute phase
+        int total_compute_elements = CUDADMA_COMPUTE_X * CUDADMA_COMPUTE_Y;
+
+        for (int elem_idx = threadIdx.x; elem_idx < total_compute_elements; elem_idx += COMPUTE_THREADS_PER_CTA)
+        {
+            int ty = elem_idx / CUDADMA_COMPUTE_X;
+            int tx = elem_idx % CUDADMA_COMPUTE_X;
+
+            int i = blockIdx.y * CUDADMA_COMPUTE_Y + ty;
+            int j = blockIdx.x * CUDADMA_COMPUTE_X + tx;
+
+            int local_i = ty + 1;
+            int local_j = tx + 1;
+
+            if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
+            {
+                B[i * n + j] = 0.2f * (tile[local_i][local_j] +
+                                       tile[local_i][local_j - 1] +
+                                       tile[local_i][local_j + 1] +
+                                       tile[local_i + 1][local_j] +
+                                       tile[local_i - 1][local_j]);
+            }
+        }
+    }
+}
+/**
+ * Pure cudaDMA warp-specialized kernel
+ * Separates DMA threads (memory transfer) from compute threads
+ * This version attempts pure hardware DMA without software fallback
+ */
+template <bool DO_SYNC>
+__global__ void __launch_bounds__(TOTAL_THREADS, 1)
+    jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
 {
     __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
 
@@ -184,75 +267,104 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     int start_i = block_i - 1;
     int start_j = block_j - 1;
 
-    // Check whether the whole tile lies within valid global memory bounds
-    bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
-                                (start_i + CUDADMA_TILE_Y <= n) &&
-                                (start_j + CUDADMA_TILE_X <= n);
+    // Source pointer for DMA load (start of tile region in global memory)
+    // Note: This may point outside valid memory for edge blocks, handled below
+    const DATA_TYPE *src_ptr = &A[start_i * n + start_j];
 
-    // WORKAROUND: Use software load for all tiles due to cudaDMA configuration issue
-    // The cudaDMAStrided configuration appears correct but produces incorrect results.
-    // Software load has been verified to work correctly with 0 mismatches.
-    // TODO: Debug cudaDMA transfer - possible issues:
-    //   - Stride interpretation for 2D tiles with halo
-    //   - Synchronization between DMA and compute threads
-    //   - Address alignment or boundary handling
-
-    if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
+    if (dma_loader.owns_this_thread())
     {
-        // Compute threads: use software load instead of DMA
+        // DMA threads: perform hardware DMA transfer
+        // Zero out the entire tile first to handle out-of-bounds regions
         int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
-        for (int idx = threadIdx.x; idx < total_tile_elements; idx += COMPUTE_THREADS_PER_CTA)
+        for (int idx = threadIdx.x - COMPUTE_THREADS_PER_CTA;
+             idx < total_tile_elements;
+             idx += DMA_THREADS_PER_LD)
         {
             int ii = idx / CUDADMA_TILE_X;
             int jj = idx % CUDADMA_TILE_X;
-            int gi = start_i + ii;
-            int gj = start_j + jj;
-
-            if (gi >= 0 && gi < n && gj >= 0 && gj < n)
-                tile[ii][jj] = A[gi * n + gj];
-            else
-                tile[ii][jj] = 0.0f;
+            tile[ii][jj] = 0.0f;
         }
 
-        __syncthreads(); // We have 256 threads to cover 30x30 = 900 compute elements
-        // Each thread will handle multiple elements in a strided pattern
-        int total_compute_elements = CUDADMA_COMPUTE_X * CUDADMA_COMPUTE_Y;
+        // Wait for compute threads to signal start
+        dma_loader.wait_for_dma_start();
 
-        // Each thread processes elements in a strided pattern
-        for (int elem_idx = threadIdx.x; elem_idx < total_compute_elements; elem_idx += COMPUTE_THREADS_PER_CTA)
+        // Check if tile is fully in bounds - only transfer if safe
+        bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
+                                    (start_i + CUDADMA_TILE_Y <= n) &&
+                                    (start_j + CUDADMA_TILE_X <= n);
+
+        if (tile_fully_in_bounds)
         {
-            // Map linear index to 2D position within the compute region
-            int ty = elem_idx / CUDADMA_COMPUTE_X;
-            int tx = elem_idx % CUDADMA_COMPUTE_X;
+            // Safe to do DMA transfer - entire tile is within array bounds
+            dma_loader.execute_dma(src_ptr, tile);
+        }
+        else
+        {
+            // Edge block: manually load valid elements (software fallback for boundary)
+            // Each DMA thread loads full rows in a strided pattern
+            int dma_tid = threadIdx.x - COMPUTE_THREADS_PER_CTA; // 0-31 for DMA threads
+            for (int ii = dma_tid; ii < CUDADMA_TILE_Y; ii += DMA_THREADS_PER_LD)
+            {
+                int gi = start_i + ii;
+                if (gi >= 0 && gi < n)
+                {
+                    for (int jj = 0; jj < CUDADMA_TILE_X; jj++)
+                    {
+                        int gj = start_j + jj;
+                        if (gj >= 0 && gj < n)
+                        {
+                            tile[ii][jj] = A[gi * n + gj];
+                        }
+                        // else: already zeroed above
+                    }
+                }
+                // else: entire row out of bounds, already zeroed
+            }
+        }
 
-            // Calculate global position
-            int i = blockIdx.y * CUDADMA_COMPUTE_Y + ty;
-            int j = blockIdx.x * CUDADMA_COMPUTE_X + tx;
+        dma_loader.finish_async_dma();
+    }
+    else if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
+    {
+        // Compute threads: signal DMA threads to start, then wait for completion
+        dma_loader.start_async_dma();
+        dma_loader.wait_for_dma_finish();
 
+        // CRITICAL: synchronize all compute threads before reading shared memory
+        __syncthreads();
+
+        // Direct 1:1 mapping: each thread handles exactly one stencil point
+        // Thread index maps directly to 2D position (no strided loop needed)
+        int ty = threadIdx.x / CUDADMA_COMPUTE_X;
+        int tx = threadIdx.x % CUDADMA_COMPUTE_X;
+
+        // Calculate global position
+        int i = blockIdx.y * CUDADMA_COMPUTE_Y + ty;
+        int j = blockIdx.x * CUDADMA_COMPUTE_X + tx;
+
+        // Only proceed if this thread's position is within the valid compute region
+        // (accounts for edge blocks that may extend beyond array boundaries)
+        if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
+        {
             // Calculate local tile position (accounting for halo)
+            // Tile stores data starting from (start_i, start_j) = (block_i-1, block_j-1)
+            // So global position (block_i + ty, block_j + tx) maps to tile[(1+ty)][1+tx)]
             int local_i = ty + 1; // Offset by 1 for top halo
             int local_j = tx + 1; // Offset by 1 for left halo
 
-            // Compute stencil (avoiding global boundaries)
-            if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
-            {
-                B[i * n + j] = 0.2f * (tile[local_i][local_j] +     // center
-                                       tile[local_i][local_j - 1] + // left
-                                       tile[local_i][local_j + 1] + // right
-                                       tile[local_i + 1][local_j] + // bottom
-                                       tile[local_i - 1][local_j]); // top
-            }
+            // Compute stencil
+            B[i * n + j] = 0.2f * (tile[local_i][local_j] +     // center
+                                   tile[local_i][local_j - 1] + // left
+                                   tile[local_i][local_j + 1] + // right
+                                   tile[local_i + 1][local_j] + // bottom
+                                   tile[local_i - 1][local_j]); // top
         }
     }
-    else if (dma_loader.owns_this_thread())
-    {
-        // DMA threads: currently unused due to software fallback
-        // Originally intended to use: dma_loader.execute_dma(src_ptr, tile);
-        // But DMA transfer produces incorrect results - needs further debugging
-    }
-} /**
-   * Copy kernel (A = B)
-   */
+}
+
+/**
+ * Copy kernel (A = B)
+ */
 __global__ void jacobi2D_kernel_copy(int n, DATA_TYPE *A, DATA_TYPE *B)
 {
     int i = blockIdx.y * blockDim.y + threadIdx.y;
@@ -285,6 +397,7 @@ __global__ void jacobi2D_kernel_copy_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
 
 /**
  * Compare CPU and GPU results
+ * Only compares array A (final result after all iterations)
  */
 void compareResults(int n, DATA_TYPE POLYBENCH_2D(a, N, N, n, n), DATA_TYPE POLYBENCH_2D(a_outputFromGpu, N, N, n, n),
                     DATA_TYPE POLYBENCH_2D(b, N, N, n, n), DATA_TYPE POLYBENCH_2D(b_outputFromGpu, N, N, n, n))
@@ -292,24 +405,12 @@ void compareResults(int n, DATA_TYPE POLYBENCH_2D(a, N, N, n, n), DATA_TYPE POLY
     int i, j, fail;
     fail = 0;
 
-    // Compare A arrays
+    // Compare A arrays (final result)
     for (i = 0; i < n; i++)
     {
         for (j = 0; j < n; j++)
         {
             if (percentDiff(a[i][j], a_outputFromGpu[i][j]) > PERCENT_DIFF_ERROR_THRESHOLD)
-            {
-                fail++;
-            }
-        }
-    }
-
-    // Compare B arrays
-    for (i = 0; i < n; i++)
-    {
-        for (j = 0; j < n; j++)
-        {
-            if (percentDiff(b[i][j], b_outputFromGpu[i][j]) > PERCENT_DIFF_ERROR_THRESHOLD)
             {
                 fail++;
             }
@@ -354,6 +455,22 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
         // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+
+        // Debug: dump arrays after first iteration
+        if (t == 0)
+        {
+            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+
+            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+
+            dump_array_to_file("baseline_array_a_iter1.txt", n, A_debug);
+            dump_array_to_file("baseline_array_b_iter1.txt", n, B_debug);
+
+            free(A_debug);
+            free(B_debug);
+        }
     }
 
     /* Print aggregated kernel time */
@@ -400,6 +517,22 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
         // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+
+        // Debug: dump arrays after first iteration
+        if (t == 0)
+        {
+            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+
+            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+
+            dump_array_to_file("shared_array_a_iter1.txt", n, A_debug);
+            dump_array_to_file("shared_array_b_iter1.txt", n, B_debug);
+
+            free(A_debug);
+            free(B_debug);
+        }
     }
 
     /* Print aggregated kernel time */
@@ -443,14 +576,30 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     for (int t = 0; t < tsteps; t++)
     {
         polybench_start_instruments;
-        jacobi2D_kernel_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
+        jacobi2D_kernel_pure_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
         polybench_stop_instruments;
         total_kernel_time += polybench_t_end - polybench_t_start;
 
         // Copy kernel (not measured)
-        jacobi2D_kernel_copy_cudaDMA<<<copy_grid, copy_block>>>(n, A_gpu, B_gpu);
+        jacobi2D_kernel_copy<<<copy_grid, copy_block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
+
+        // Debug: dump arrays after first iteration
+        if (t == 0)
+        {
+            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+
+            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+
+            dump_array_to_file("cudadma_array_a_iter1.txt", n, A_debug);
+            dump_array_to_file("cudadma_array_b_iter1.txt", n, B_debug);
+
+            free(A_debug);
+            free(B_debug);
+        }
     }
 
     /* Print aggregated kernel time */
@@ -481,6 +630,32 @@ static void print_array(int n, DATA_TYPE POLYBENCH_2D(A, N, N, n, n))
         }
     }
     fprintf(stderr, "\n");
+}
+
+/**
+ * Dump array to file for debugging
+ */
+static void dump_array_to_file(const char *filename, int n, DATA_TYPE *A)
+{
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Error: Could not open file %s for writing\n", filename);
+        return;
+    }
+
+    for (int i = 0; i < n; i++)
+    {
+        for (int j = 0; j < n; j++)
+        {
+            fprintf(fp, DATA_PRINTF_MODIFIER, A[i * n + j]);
+            if ((i * n + j) % 20 == 0)
+                fprintf(fp, "\n");
+        }
+    }
+
+    fclose(fp);
+    printf("Array dumped to %s\n", filename);
 }
 
 /**

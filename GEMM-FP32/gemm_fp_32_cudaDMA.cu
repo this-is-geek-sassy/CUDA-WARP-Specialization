@@ -319,7 +319,7 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
     if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
         int thread_id = threadIdx.x;
-        int elements_per_thread = (TILE_SIZE * TILE_SIZE) / COMPUTE_THREADS_PER_CTA; // 4
+        constexpr int elements_per_thread = (TILE_SIZE * TILE_SIZE) / COMPUTE_THREADS_PER_CTA; // 4
         
         fp32_t sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         
