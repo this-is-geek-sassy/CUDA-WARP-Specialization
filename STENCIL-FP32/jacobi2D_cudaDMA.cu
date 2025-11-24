@@ -734,7 +734,7 @@ int main(int argc, char **argv)
 
 #ifdef RUN_ON_CPU
     // Skip CPU execution for very large datasets (>= 8192)
-    if (n <= 8192)
+    if (n <= 16384)
     {
         printf("\n=== CPU Time ===\n");
         polybench_start_instruments;

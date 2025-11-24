@@ -12,18 +12,18 @@ cudaDMA DMA threads: 32
 
 === GPU Time (Baseline - No Shared Memory) ===
 Completed all 100 time steps in cudaDMA kernel.
-Total kernel execution time: 1.025522
+Total kernel execution time: 0.867940
 
 === GPU Time (Shared Memory Optimized) ===
 Completed all 100 time steps in cudaDMA kernel.
-Total kernel execution time: 1.926008
+Total kernel execution time: 1.685995
 
 === GPU Time (cudaDMA Warp-Specialized) ===
 Completed all 100 time steps in cudaDMA kernel.
-Total kernel execution time: 0.140356
+Total kernel execution time: 0.151271
 
 === CPU Time ===
-5.716790
+7.969391
 
 === Validation: Baseline GPU vs CPU ===
 Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0

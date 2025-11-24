@@ -1,0 +1,233 @@
+========================================
+Jacobi 2D Stencil Benchmark
+Date: Mon Nov 24 07:38:37 PM IST 2025
+Max dimension filter: 16384
+========================================
+
+========================================
+Testing MINI_DATASET (128x128, 100 timesteps)
+========================================
+Compiling for MINI_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: MINI_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DMINI_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[128 + 0][128 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.005235s, Shared: 0.002131s, cudaDMA: 0.002655s, CPU: s
+  Run 2/5...
+    Baseline: 0.005250s, Shared: 0.002130s, cudaDMA: 0.002489s, CPU: s
+  Run 3/5...
+    Baseline: 0.005226s, Shared: 0.002127s, cudaDMA: 0.002477s, CPU: s
+  Run 4/5...
+    Baseline: 0.005349s, Shared: 0.002125s, cudaDMA: 0.002477s, CPU: s
+  Run 5/5...
+    Baseline: 0.005235s, Shared: 0.002156s, cudaDMA: 0.002481s, CPU: s
+
+Average Results:
+  Baseline:       .005259s
+  Shared Memory:  .002133s  (speedup: 2.465x over baseline)
+  cudaDMA:        .002515s  (speedup: 2.091x over baseline)
+  CPU:            N/As
+
+========================================
+Testing SMALL_DATASET (256x256, 100 timesteps)
+========================================
+Compiling for SMALL_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: SMALL_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DSMALL_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[256 + 0][256 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.005826s, Shared: 0.003422s, cudaDMA: 0.002837s, CPU: s
+  Run 2/5...
+    Baseline: 0.005813s, Shared: 0.003414s, cudaDMA: 0.002623s, CPU: s
+  Run 3/5...
+    Baseline: 0.005869s, Shared: 0.003428s, cudaDMA: 0.002621s, CPU: s
+  Run 4/5...
+    Baseline: 0.005803s, Shared: 0.003409s, cudaDMA: 0.002636s, CPU: s
+  Run 5/5...
+    Baseline: 0.005800s, Shared: 0.003407s, cudaDMA: 0.002608s, CPU: s
+
+Average Results:
+  Baseline:       .005822s
+  Shared Memory:  .003416s  (speedup: 1.704x over baseline)
+  cudaDMA:        .002665s  (speedup: 2.184x over baseline)
+  CPU:            N/As
+
+========================================
+Testing STANDARD_DATASET (1024x1024, 100 timesteps)
+========================================
+Compiling for STANDARD_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: STANDARD_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DSTANDARD_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[1024 + 0][1024 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.016984s, Shared: 0.028904s, cudaDMA: 0.004910s, CPU: s
+  Run 2/5...
+    Baseline: 0.017074s, Shared: 0.028935s, cudaDMA: 0.004873s, CPU: s
+  Run 3/5...
+    Baseline: 0.017036s, Shared: 0.028919s, cudaDMA: 0.004862s, CPU: s
+  Run 4/5...
+    Baseline: 0.017064s, Shared: 0.028938s, cudaDMA: 0.005013s, CPU: s
+  Run 5/5...
+    Baseline: 0.017020s, Shared: 0.028928s, cudaDMA: 0.004844s, CPU: s
+
+Average Results:
+  Baseline:       .017035s
+  Shared Memory:  .028924s  (speedup: .588x over baseline)
+  cudaDMA:        .004900s  (speedup: 3.476x over baseline)
+  CPU:            N/As
+
+========================================
+Testing LARGE_DATASET (2048x2048, 100 timesteps)
+========================================
+Compiling for LARGE_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: LARGE_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DLARGE_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[2048 + 0][2048 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.061804s, Shared: 0.118204s, cudaDMA: 0.011915s, CPU: s
+  Run 2/5...
+    Baseline: 0.061797s, Shared: 0.118409s, cudaDMA: 0.012024s, CPU: s
+  Run 3/5...
+    Baseline: 0.061881s, Shared: 0.118194s, cudaDMA: 0.011890s, CPU: s
+  Run 4/5...
+    Baseline: 0.061923s, Shared: 0.118201s, cudaDMA: 0.011893s, CPU: s
+  Run 5/5...
+    Baseline: 0.061890s, Shared: 0.118301s, cudaDMA: 0.011909s, CPU: s
+
+Average Results:
+  Baseline:       .061859s
+  Shared Memory:  .118261s  (speedup: .523x over baseline)
+  cudaDMA:        .011926s  (speedup: 5.186x over baseline)
+  CPU:            N/As
+
+========================================
+Testing EXTRALARGE_DATASET (4096x4096, 100 timesteps)
+========================================
+Compiling for EXTRALARGE_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: EXTRALARGE_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DEXTRALARGE_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[4096 + 0][4096 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.232348s, Shared: 0.456341s, cudaDMA: 0.039878s, CPU: s
+  Run 2/5...
+    Baseline: 0.232219s, Shared: 0.462183s, cudaDMA: 0.039845s, CPU: s
+  Run 3/5...
+    Baseline: 0.231644s, Shared: 0.459779s, cudaDMA: 0.039871s, CPU: s
+  Run 4/5...
+    Baseline: 0.232482s, Shared: 0.460245s, cudaDMA: 0.039846s, CPU: s
+  Run 5/5...
+    Baseline: 0.231187s, Shared: 0.459420s, cudaDMA: 0.039841s, CPU: s
+
+Average Results:
+  Baseline:       .231976s
+  Shared Memory:  .459593s  (speedup: .504x over baseline)
+  cudaDMA:        .039856s  (speedup: 5.820x over baseline)
+  CPU:            N/As
+
+========================================
+Testing HUGE_DATASET (8192x8192, 100 timesteps)
+========================================
+Compiling for HUGE_DATASET...
+==========================================
+Building Jacobi 2D cudaDMA
+Dataset: HUGE_DATASET
+==========================================
+nvcc -O3 -arch=sm_89 -g -G -DHUGE_DATASET jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA
+  static void dump_array_to_file(const char *filename, int n, float *A)
+              ^
+
+
+  static void print_array(int n, float A[8192 + 0][8192 + 0])
+              ^
+
+Build complete: jacobi2D_cudaDMA
+Running 5 iterations...
+  Run 1/5...
+    Baseline: 0.860244s, Shared: 1.676088s, cudaDMA: 0.151127s, CPU: s
+  Run 2/5...
+    Baseline: 0.854451s, Shared: 1.672626s, cudaDMA: 0.151129s, CPU: s
+  Run 3/5...
+    Baseline: 0.859547s, Shared: 1.673255s, cudaDMA: 0.151135s, CPU: s
+  Run 4/5...
+    Baseline: 0.861249s, Shared: 1.675399s, cudaDMA: 0.151119s, CPU: s
+  Run 5/5...
+    Baseline: 0.867940s, Shared: 1.685995s, cudaDMA: 0.151271s, CPU: s
+
+Average Results:
+  Baseline:       .860686s
+  Shared Memory:  1.676672s  (speedup: .513x over baseline)
+  cudaDMA:        .151156s  (speedup: 5.694x over baseline)
+  CPU:            N/As
+
+
+========================================
+SUMMARY TABLE
+========================================
+Dataset              | Dimensions | Baseline(s) | Shared(s)  | cudaDMA(s) | CPU(s)     | Spd-Sh   | Spd-DMA 
+========================================================================================================================
+MINI_DATASET         | 128x128    | .005259    | .002133    | .002515    | N/A        | 2.465    | 2.091   
+SMALL_DATASET        | 256x256    | .005822    | .003416    | .002665    | N/A        | 1.704    | 2.184   
+STANDARD_DATASET     | 1024x1024  | .017035    | .028924    | .004900    | N/A        | .588     | 3.476   
+LARGE_DATASET        | 2048x2048  | .061859    | .118261    | .011926    | N/A        | .523     | 5.186   
+EXTRALARGE_DATASET   | 4096x4096  | .231976    | .459593    | .039856    | N/A        | .504     | 5.820   
+HUGE_DATASET         | 8192x8192  | .860686    | 1.676672   | .151156    | N/A        | .513     | 5.694   
+
+========================================
+Benchmark complete!
+Results saved to: benchmark_results_20251124_193837.txt
+========================================
