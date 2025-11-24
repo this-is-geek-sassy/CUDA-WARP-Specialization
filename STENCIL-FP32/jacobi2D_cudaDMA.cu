@@ -27,7 +27,7 @@
 #include "../../polybenchGpu/common/polybenchUtilFuncts.h"
 
 // Include cudaDMA for warp specialization (v2 for modern architectures)
-#include "cudaDMAv2.h"
+#include "cudaDMA.h"
 
 // Error threshold for validation
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
@@ -242,8 +242,9 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
  * This version attempts pure hardware DMA without software fallback
  */
 template <bool DO_SYNC>
-__global__ void __launch_bounds__(TOTAL_THREADS, 1)
-    jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
+__global__ void 
+// __launch_bounds__ (TOTAL_THREADS, 1)
+jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
 {
     __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
 
@@ -256,11 +257,10 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     const int BYTES_PER_ROW = sizeof(DATA_TYPE) * CUDADMA_TILE_X;
 
     // Constructor: (dma_id, num_compute_threads, dma_threadIdx_start, src_stride, dst_stride)
-    CudaDMAStrided<true, 16, BYTES_PER_ROW, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
+    cudaDMAStrided<true, 16, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
         dma_loader(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
                    n * sizeof(DATA_TYPE),               // src stride (row stride in global memory)
                    CUDADMA_TILE_X * sizeof(DATA_TYPE)); // dst stride (row stride in shared memory)
-    // printf("After cudaDMAStrided constructor\n");
 
     // Determine block-level coordinates for the compute region and the tile origin
     int block_i = blockIdx.y * CUDADMA_COMPUTE_Y;
@@ -276,20 +276,24 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
 
     if (dma_loader.owns_this_thread())
     {
+        printf("DMA Thread %d in Block (%d,%d), Tile start (%d,%d)\n",
+               dma_loader.dma_tid, blockIdx.x, blockIdx.y, start_i, start_j);
         // DMA threads: perform hardware DMA transfer
         // Check if tile is fully in bounds - only transfer if safe
+        dma_loader.wait_for_dma_start();
         bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
                                     (start_i + CUDADMA_TILE_Y <= n) &&
                                     (start_j + CUDADMA_TILE_X <= n);
 
         if (tile_fully_in_bounds)
         {
-            // Safe to do DMA transfer - entire tile is within array bounds
-            #if __CUDA_ARCH__ >= 350
-                        dma_loader.execute_dma<true>(src_ptr, tile);
-            #else
-                        dma_loader.execute_dma(src_ptr, tile);
-            #endif
+// Safe to do DMA transfer - entire tile is within array bounds
+// #if __CUDA_ARCH__ >= 350
+//             dma_loader.execute_dma<true>(src_ptr, tile);
+// #else
+//             dma_loader.execute_dma(src_ptr, tile);
+// #endif
+            dma_loader.execute_dma(src_ptr, tile);
         }
         else
         {
@@ -298,8 +302,8 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
             int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
             int dma_tid = threadIdx.x - COMPUTE_THREADS_PER_CTA; // 0-31 for DMA threads
             for (int idx = dma_tid;
-                    idx < total_tile_elements;
-                    idx += DMA_THREADS_PER_LD)
+                 idx < total_tile_elements;
+                 idx += DMA_THREADS_PER_LD)
             {
                 int ii = idx / CUDADMA_TILE_X;
                 int jj = idx % CUDADMA_TILE_X;
@@ -319,8 +323,12 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     }
     else if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
+        printf("After bug constructor-1\n");
+        printf("Block (%d,%d), Tile start (%d,%d)\n", blockIdx.x, blockIdx.y, start_i, start_j);
         // Compute threads: signal DMA threads to start, then wait for completion
         dma_loader.start_async_dma();
+        printf("After bug constructor\n");
+
         dma_loader.wait_for_dma_finish();
 
         // CRITICAL: synchronize all compute threads before reading shared memory
@@ -569,7 +577,7 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     for (int t = 0; t < tsteps; t++)
     {
         polybench_start_instruments;
-        jacobi2D_kernel_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
+        jacobi2D_kernel_pure_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
         cudaError_t err = cudaDeviceSynchronize();
         if (err != cudaSuccess)
         {

@@ -7,8 +7,8 @@
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="benchmark_results_${TIMESTAMP}.txt"
 
-# Dataset sizes to test
-DATASETS=("MINI_DATASET" "SMALL_DATASET" "STANDARD_DATASET" "LARGE_DATASET" "EXTRALARGE_DATASET")
+# Dataset sizes to test (all datasets will be tested)
+DATASETS=("MINI_DATASET" "SMALL_DATASET" "STANDARD_DATASET" "LARGE_DATASET" "EXTRALARGE_DATASET" "HUGE_DATASET" "HUMONGOUS_DATASET")
 
 # Optional: Filter datasets by max dimension if provided as argument
 MAX_DIM=${1:-16384}  # Default to 16384 (no filtering)
@@ -33,35 +33,29 @@ extract_time() {
 
 # Process each dataset
 for dataset in "${DATASETS[@]}"; do
-    # Get dataset dimensions
+    # Get dataset dimensions (TSTEPS is constant at 100 for all datasets)
+    TSTEPS=100
     case $dataset in
         "MINI_DATASET")
             DIM=128
-            TSTEPS=20
             ;;
         "SMALL_DATASET")
             DIM=256
-            TSTEPS=40
             ;;
         "STANDARD_DATASET")
             DIM=1024
-            TSTEPS=100
             ;;
         "LARGE_DATASET")
             DIM=2048
-            TSTEPS=200
             ;;
         "EXTRALARGE_DATASET")
             DIM=4096
-            TSTEPS=500
             ;;
         "HUGE_DATASET")
             DIM=8192
-            TSTEPS=1000
             ;;
         "HUMONGOUS_DATASET")
             DIM=16384
-            TSTEPS=2000
             ;;
     esac
     
@@ -75,9 +69,10 @@ for dataset in "${DATASETS[@]}"; do
     echo "Testing $dataset (${DIM}x${DIM}, ${TSTEPS} timesteps)" | tee -a "$LOG_FILE"
     echo "========================================" | tee -a "$LOG_FILE"
     
-    # Compile with current dataset
+    # Compile with current dataset using Makefile
     echo "Compiling for $dataset..." | tee -a "$LOG_FILE"
-    nvcc -O3 -arch=sm_86 -D${dataset} -I../.. jacobi2D_cudaDMA.cu -o jacobi2D_cudaDMA 2>&1 | grep -v "warning" | tee -a "$LOG_FILE"
+    make -f Makefile_cudaDMA clean > /dev/null 2>&1
+    make -f Makefile_cudaDMA DATASET=${dataset} 2>&1 | grep -v "warning" | tee -a "$LOG_FILE"
     
     if [ $? -ne 0 ]; then
         echo "Compilation failed for $dataset" | tee -a "$LOG_FILE"
