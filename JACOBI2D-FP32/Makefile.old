@@ -1,0 +1,13 @@
+EXECUTABLE := jacobi2D.exe
+CUFILES := jacobi2D.cu
+
+# Additional targets for optimized versions
+jacobi2d_async: jacobi2D_async.cu
+	nvcc -O3 jacobi2D_async.cu -o jacobi2d_async
+
+all: jacobi2D.exe jacobi2d_async
+
+clean:
+	rm -f *~ *.exe jacobi2d_async
+
+include ../common.mk
