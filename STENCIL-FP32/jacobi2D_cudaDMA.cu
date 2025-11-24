@@ -242,7 +242,7 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
  * This version attempts pure hardware DMA without software fallback
  */
 template <bool DO_SYNC>
-__global__ void 
+__global__ void
 // __launch_bounds__ (TOTAL_THREADS, 1)
 jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
 {
@@ -287,12 +287,12 @@ jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
 
         if (tile_fully_in_bounds)
         {
-// Safe to do DMA transfer - entire tile is within array bounds
-// #if __CUDA_ARCH__ >= 350
-//             dma_loader.execute_dma<true>(src_ptr, tile);
-// #else
-//             dma_loader.execute_dma(src_ptr, tile);
-// #endif
+            // Safe to do DMA transfer - entire tile is within array bounds
+            // #if __CUDA_ARCH__ >= 350
+            //             dma_loader.execute_dma<true>(src_ptr, tile);
+            // #else
+            //             dma_loader.execute_dma(src_ptr, tile);
+            // #endif
             dma_loader.execute_dma(src_ptr, tile);
         }
         else
@@ -445,13 +445,13 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
 
     // Run Jacobi iterations - measure only kernel execution time
     double total_kernel_time = 0.0;
+    polybench_start_instruments;
     for (int t = 0; t < tsteps; t++)
     {
-        polybench_start_instruments;
+        
         jacobi2D_kernel_baseline<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
-        polybench_stop_instruments;
-        total_kernel_time += polybench_t_end - polybench_t_start;
+        
 
         // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
@@ -473,6 +473,8 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
         //     free(B_debug);
         // }
     }
+    polybench_stop_instruments;
+    total_kernel_time += polybench_t_end - polybench_t_start;
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (Baseline - No Shared Memory) ===\n");
@@ -508,13 +510,11 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
 
     // Run Jacobi iterations - measure only kernel execution time
     double total_kernel_time = 0.0;
+    polybench_start_instruments;
     for (int t = 0; t < tsteps; t++)
     {
-        polybench_start_instruments;
         jacobi2D_kernel_shared<<<grid, block>>>(n, A_gpu, B_gpu);
         cudaDeviceSynchronize();
-        polybench_stop_instruments;
-        total_kernel_time += polybench_t_end - polybench_t_start;
 
         // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<grid, block>>>(n, A_gpu, B_gpu);
@@ -536,6 +536,9 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
         //     free(B_debug);
         // }
     }
+    polybench_stop_instruments;
+    total_kernel_time += polybench_t_end - polybench_t_start;
+
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (Shared Memory Optimized) ===\n");
@@ -576,17 +579,16 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
 
     // Run Jacobi iterations - measure only kernel execution time
     double total_kernel_time = 0.0;
+    polybench_start_instruments;
     for (int t = 0; t < tsteps; t++)
     {
-        polybench_start_instruments;
         jacobi2D_kernel_pure_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
         cudaError_t err = cudaDeviceSynchronize();
         if (err != cudaSuccess)
         {
             printf("CUDA Error after kernel launch: %s\n", cudaGetErrorString(err));
         }
-        polybench_stop_instruments;
-        total_kernel_time += polybench_t_end - polybench_t_start;
+        
 
         // Copy kernel (not measured)
         jacobi2D_kernel_copy<<<copy_grid, copy_block>>>(n, A_gpu, B_gpu);
@@ -608,6 +610,8 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
         //     free(B_debug);
         // }
     }
+    polybench_stop_instruments;
+    total_kernel_time += polybench_t_end - polybench_t_start;
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (cudaDMA Warp-Specialized) ===\n");

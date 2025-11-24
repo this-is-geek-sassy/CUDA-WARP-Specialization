@@ -54,9 +54,9 @@ for dataset in "${DATASETS[@]}"; do
         "HUGE_DATASET")
             DIM=8192
             ;;
-        "HUMONGOUS_DATASET")
-            DIM=16384
-            ;;
+        # "HUMONGOUS_DATASET")
+        #     DIM=16384
+        #     ;;
     esac
     
     # Skip if dimension exceeds max
