@@ -8,7 +8,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="benchmark_results_${TIMESTAMP}.txt"
 
 # Dataset sizes to test (all datasets will be tested)
-DATASETS=("MINI_DATASET" "SMALL_DATASET" "STANDARD_DATASET" "LARGE_DATASET" "EXTRALARGE_DATASET" "HUGE_DATASET" "HUMONGOUS_DATASET")
+DATASETS=("MINI_DATASET" "SMALL_DATASET" "STANDARD_DATASET" "LARGE_DATASET" "EXTRALARGE_DATASET" "HUGE_DATASET")
 
 # Optional: Filter datasets by max dimension if provided as argument
 MAX_DIM=${1:-16384}  # Default to 16384 (no filtering)
