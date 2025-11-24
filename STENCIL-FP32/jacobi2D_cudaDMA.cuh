@@ -18,12 +18,12 @@
 #if !defined(N)
 /* Define the possible dataset sizes. */
 #ifdef MINI_DATASET
-#define TSTEPS 20
+#define TSTEPS 100
 #define N 128
 #endif
 
 #ifdef SMALL_DATASET
-#define TSTEPS 40
+#define TSTEPS 100
 #define N 256
 #endif
 
@@ -33,22 +33,22 @@
 #endif
 
 #ifdef LARGE_DATASET
-#define TSTEPS 200
+#define TSTEPS 100
 #define N 2048
 #endif
 
 #ifdef EXTRALARGE_DATASET
-#define TSTEPS 500
+#define TSTEPS 100
 #define N 4096
 #endif
 
 #ifdef HUGE_DATASET
-#define TSTEPS 1000
+#define TSTEPS 100
 #define N 8192
 #endif
 
 #ifdef HUMONGOUS_DATASET
-#define TSTEPS 2000
+#define TSTEPS 100
 #define N 16384
 #endif
 #endif /* !N */

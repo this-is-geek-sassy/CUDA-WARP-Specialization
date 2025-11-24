@@ -27,8 +27,8 @@ echo "" | tee -a "$LOG_FILE"
 extract_time() {
     local pattern=$1
     local output=$2
-    # Look for "Total kernel execution time: X.XXXXXX" format
-    echo "$output" | grep -A 1 "$pattern" | grep "Total kernel execution time" | awk '{print $5}'
+    # Look for "Total kernel execution time: X.XXXXXX" format (within 2 lines after pattern)
+    echo "$output" | grep -A 2 "$pattern" | grep "Total kernel execution time" | awk '{print $5}'
 }
 
 # Process each dataset

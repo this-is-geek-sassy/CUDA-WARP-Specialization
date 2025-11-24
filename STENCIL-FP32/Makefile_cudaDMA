@@ -6,7 +6,7 @@ CUFILES := jacobi2D_cudaDMA.cu
 
 # Compiler and flags
 NVCC := nvcc
-NVCCFLAGS := -O3 -arch=sm_86 -g -G
+NVCCFLAGS := -O3 -arch=sm_86
 
 # Dataset size (default to STANDARD_DATASET)
 DATASET ?= STANDARD_DATASET
@@ -92,13 +92,13 @@ help:
 	@echo "  make -f Makefile_cudaDMA help                 - Show this help message"
 	@echo ""
 	@echo "Dataset Options:"
-	@echo "  MINI_DATASET        - N=128,   TSTEPS=20"
-	@echo "  SMALL_DATASET       - N=256,   TSTEPS=40"
+	@echo "  MINI_DATASET        - N=128,   TSTEPS=100"
+	@echo "  SMALL_DATASET       - N=256,   TSTEPS=100"
 	@echo "  STANDARD_DATASET    - N=1024,  TSTEPS=100  (default)"
-	@echo "  LARGE_DATASET       - N=2048,  TSTEPS=200"
-	@echo "  EXTRALARGE_DATASET  - N=4096,  TSTEPS=500"
-	@echo "  HUGE_DATASET        - N=8192,  TSTEPS=1000"
-	@echo "  HUMONGOUS_DATASET   - N=16384, TSTEPS=2000"
+	@echo "  LARGE_DATASET       - N=2048,  TSTEPS=100"
+	@echo "  EXTRALARGE_DATASET  - N=4096,  TSTEPS=100"
+	@echo "  HUGE_DATASET        - N=8192,  TSTEPS=100"
+	@echo "  HUMONGOUS_DATASET   - N=16384, TSTEPS=100"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make -f Makefile_cudaDMA                              - Build with STANDARD_DATASET"

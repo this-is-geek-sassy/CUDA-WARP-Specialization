@@ -458,24 +458,25 @@ void runJacobi2DCUDA_baseline(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N,
         cudaDeviceSynchronize();
 
         // Debug: dump arrays after first iteration
-        if (t == 0)
-        {
-            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
-            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        // if (t == 0)
+        // {
+        //     DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        //     DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
 
-            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
-            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
 
-            dump_array_to_file("baseline_array_a_iter1.txt", n, A_debug);
-            dump_array_to_file("baseline_array_b_iter1.txt", n, B_debug);
+        //     dump_array_to_file("baseline_array_a_iter1.txt", n, A_debug);
+        //     dump_array_to_file("baseline_array_b_iter1.txt", n, B_debug);
 
-            free(A_debug);
-            free(B_debug);
-        }
+        //     free(A_debug);
+        //     free(B_debug);
+        // }
     }
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (Baseline - No Shared Memory) ===\n");
+    printf("Completed all %d time steps in cudaDMA kernel.\n", tsteps);
     printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -520,24 +521,25 @@ void runJacobi2DCUDA_shared(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, n
         cudaDeviceSynchronize();
 
         // Debug: dump arrays after first iteration
-        if (t == 0)
-        {
-            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
-            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        // if (t == 0)
+        // {
+        //     DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        //     DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
 
-            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
-            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
 
-            dump_array_to_file("shared_array_a_iter1.txt", n, A_debug);
-            dump_array_to_file("shared_array_b_iter1.txt", n, B_debug);
+        //     dump_array_to_file("shared_array_a_iter1.txt", n, A_debug);
+        //     dump_array_to_file("shared_array_b_iter1.txt", n, B_debug);
 
-            free(A_debug);
-            free(B_debug);
-        }
+        //     free(A_debug);
+        //     free(B_debug);
+        // }
     }
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (Shared Memory Optimized) ===\n");
+    printf("Completed all %d time steps in cudaDMA kernel.\n", tsteps);
     printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -591,24 +593,25 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
         cudaDeviceSynchronize();
 
         // Debug: dump arrays after first iteration
-        if (t == 0)
-        {
-            DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
-            DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        // if (t == 0)
+        // {
+        //     DATA_TYPE *A_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
+        //     DATA_TYPE *B_debug = (DATA_TYPE *)malloc(n * n * sizeof(DATA_TYPE));
 
-            cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
-            cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(A_debug, A_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+        //     cudaMemcpy(B_debug, B_gpu, n * n * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
 
-            dump_array_to_file("cudadma_array_a_iter1.txt", n, A_debug);
-            dump_array_to_file("cudadma_array_b_iter1.txt", n, B_debug);
+        //     dump_array_to_file("cudadma_array_a_iter1.txt", n, A_debug);
+        //     dump_array_to_file("cudadma_array_b_iter1.txt", n, B_debug);
 
-            free(A_debug);
-            free(B_debug);
-        }
+        //     free(A_debug);
+        //     free(B_debug);
+        // }
     }
 
     /* Print aggregated kernel time */
     printf("\n=== GPU Time (cudaDMA Warp-Specialized) ===\n");
+    printf("Completed all %d time steps in cudaDMA kernel.\n", tsteps);
     printf("Total kernel execution time: %0.6lf\n", total_kernel_time);
 
     cudaMemcpy(A_outputFromGpu, A_gpu, sizeof(DATA_TYPE) * n * n, cudaMemcpyDeviceToHost);
@@ -727,7 +730,7 @@ int main(int argc, char **argv)
 
 #ifdef RUN_ON_CPU
     // Skip CPU execution for very large datasets (>= 8192)
-    if (n < 8192)
+    if (n <= 8192)
     {
         printf("\n=== CPU Time ===\n");
         polybench_start_instruments;
