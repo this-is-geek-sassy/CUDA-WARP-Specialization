@@ -1,0 +1,39 @@
+========================================
+Jacobi 2D Stencil - Performance Comparison
+========================================
+Dataset size: 8192x8192
+Time steps: 100
+Baseline thread block: 32x8
+cudaDMA compute threads: 900 (30x30)
+cudaDMA tile size: 32x32 (includes halo)
+cudaDMA DMA threads: 32
+========================================
+
+
+=== GPU Time (Baseline - No Shared Memory) ===
+Completed all 100 time steps in cudaDMA kernel.
+Total kernel execution time: 1.025522
+
+=== GPU Time (Shared Memory Optimized) ===
+Completed all 100 time steps in cudaDMA kernel.
+Total kernel execution time: 1.926008
+
+=== GPU Time (cudaDMA Warp-Specialized) ===
+Completed all 100 time steps in cudaDMA kernel.
+Total kernel execution time: 0.140356
+
+=== CPU Time ===
+5.716790
+
+=== Validation: Baseline GPU vs CPU ===
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
+
+=== Validation: Shared Memory GPU vs CPU ===
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
+
+=== Validation: cudaDMA GPU vs CPU ===
+Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 0
+
+========================================
+Execution completed successfully!
+========================================
