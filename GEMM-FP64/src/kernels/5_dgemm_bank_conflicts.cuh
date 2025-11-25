@@ -22,15 +22,15 @@
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
 __global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  extern __shared__ float sm[];
+  constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
+  constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
+
+  __shared__ float sm[BK * (BM + BN)];
   float* sA = &sm[0];
   float* sB = &sm[BM * BK];
 
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
-
-  constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
-  constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
 
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
@@ -55,11 +55,9 @@ __global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int 
   }
 
   // Epilogue
-  for(int i = 0; i < TM; i++) {
-    for(int j = 0; j < TN; j++) {
+  for(int i = 0; i < TM; i++) 
+    for(int j = 0; j < TN; j++) 
       C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
-    }
-  }
 }
 
 #endif // DGEMM_BANK_CONFLICTS_CUH

@@ -3,7 +3,7 @@
 
 #include <cuda.h>
 #include <cassert>
-#include "../headers/cudaDMAv2.h"
+#include "../headers/cudaDMA.h"
 #include "utils/global_mem_utils.cuh"
 
 /// @brief Bank Conflicts Free DGEMM Kernel
@@ -31,7 +31,7 @@ __global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, flo
   constexpr unsigned int NUM_LOAD_THREADS_PER_LD = NUM_LOAD_WARPS * WARP_SIZE / 2;
   constexpr unsigned int NUM_COMPUTE_THREADS = NUM_COMPUTE_WARPS * WARP_SIZE;
 
-  extern __shared__ float sm[];
+  __shared__ float sm[2 * BK * (BM + BN)];
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
 
@@ -40,9 +40,9 @@ __global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, flo
 
   const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x;
 
-  CudaDMAStrided<true, 16, 128, sizeof(float)*BK, NUM_LOAD_THREADS_PER_LD, BM>
+  cudaDMAStrided<true, 16, 128, NUM_LOAD_THREADS_PER_LD, BM>
     dma_A(1, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS, sizeof(float)*K, sizeof(float)*BK);
-  CudaDMAStrided<true, 16, 128, sizeof(float)*BN, NUM_LOAD_THREADS_PER_LD, BK>
+  cudaDMAStrided<true, 16, 128, NUM_LOAD_THREADS_PER_LD, BK>
     dma_B(2, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS + NUM_LOAD_THREADS_PER_LD, sizeof(float)*N, sizeof(float)*BN);
 
   if(tId < NUM_COMPUTE_THREADS) {

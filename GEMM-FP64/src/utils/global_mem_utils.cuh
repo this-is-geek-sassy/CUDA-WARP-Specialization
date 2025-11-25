@@ -37,7 +37,7 @@ __device__ void readTileBatched(const unsigned int N, float* src, float* dest) {
 /// @param dest Pointer to dest
 /// @param N Row stride of src
 template<unsigned int BM, unsigned int BN, unsigned int NUM_THREADS, unsigned int THREAD_OFFSET>
-__device__ void readTileChunked(const unsigned int N, float* src, float* dest) {
+__forceinline__ __device__ void readTileChunked(const unsigned int N, float* src, float* dest) {
   float4* src_float4 = reinterpret_cast<float4*>(src);
   float4* dest_float4 = reinterpret_cast<float4*>(dest);
   constexpr unsigned int BN_VECTORIZED = BN / 4;
@@ -45,8 +45,8 @@ __device__ void readTileChunked(const unsigned int N, float* src, float* dest) {
 
   static_assert(NUM_THREADS % BN_VECTORIZED == 0);
   constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED; 
-  static_assert(BM % ROW_STEP == 0);
-  constexpr unsigned int NUM_ITERS = BM / ROW_STEP;
+  // static_assert(BM % ROW_STEP == 0);
+  constexpr unsigned int NUM_ITERS = (BM + ROW_STEP - 1) / ROW_STEP;
 
   const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x - THREAD_OFFSET;
   unsigned int row = tId / BN_VECTORIZED;
@@ -54,7 +54,7 @@ __device__ void readTileChunked(const unsigned int N, float* src, float* dest) {
 
   #pragma unroll
   for(unsigned int i = 0; i < NUM_ITERS; i++) {
-    dest_float4[row * BN_VECTORIZED + col] = src_float4[row * N_vectorized + col];
+    if(row < BM) dest_float4[row * BN_VECTORIZED + col] = src_float4[row * N_vectorized + col];
     row += ROW_STEP;
   }
 }

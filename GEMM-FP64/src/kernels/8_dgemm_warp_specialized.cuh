@@ -85,11 +85,9 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
     }
 
     // Epilogue
-    for(int i = 0; i < TM; i++) {
-      for(int j = 0; j < TN; j++) {
+    for(int i = 0; i < TM; i++)
+      for(int j = 0; j < TN; j++)
         C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
-      }
-    }
   }
 }
 

@@ -22,7 +22,7 @@
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
 __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  extern __shared__ float sm[];
+  __shared__ float sm[2 * BK * (BM + BN)];
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
   int mem = 0, buf = 1;
@@ -81,11 +81,9 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
         acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
  
   // Epilogue
-  for(int i = 0; i < TM; i++) {
-    for(int j = 0; j < TN; j++) {
+  for(int i = 0; i < TM; i++)
+    for(int j = 0; j < TN; j++)
       C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
-    }
-  }
 }
 
 #endif // DGEMM_DOUBLE_BUFFERED_CUH

@@ -27,14 +27,22 @@ bool dgemm_bank_conflicts_driver(float alpha, float beta, int M, int N, int K, f
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
   const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
   const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
+
+  std::cout << "--- LAUNCH PARAMS ---" << std::endl;
+  std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
+  std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
+  std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
+  std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
+  std::cout << "No. threads:    " << NUM_THREADS << std::endl;
+  std::cout << "---------------------" << std::endl;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -52,7 +60,7 @@ bool dgemm_bank_conflicts_driver(float alpha, float beta, int M, int N, int K, f
 
   std::cout << "DRIVER: Launching Bank Conflicts Free Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_bank_conflicts<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_bank_conflicts<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

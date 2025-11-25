@@ -3,8 +3,6 @@
 
 #include <cuda.h>
 #include <cassert>
-#include <cooperative_groups.h>
-#include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>
 #include "utils/global_mem_utils.cuh"
 
@@ -25,15 +23,12 @@
 /// @param C Pointer to C matrix (M x N)
 template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
 __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  namespace cg = cooperative_groups;
-  auto block = cg::this_thread_block();
-  auto tileA = cg::tiled_partition<BM>(block);
-  auto tileB = cg::tiled_partition<BK>(block);
-
   constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
   constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
 
-  __shared__ float sm[2 * BK * (BM + BN)];
+  __shared__ cuda::barrier<cuda::thread_scope_block> bar;
+  __shared__ alignas(16) float sm[2 * BK * (BM + BN)];
+
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
   int mem = 0, buf = 1;
@@ -50,17 +45,48 @@ __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, in
     for(int j = 0; j < TN; j++)
       acc_reg[i][j] = 0.0;
 
+  if (tId == 0) {
+    init(&bar, NUM_THREADS);
+  }
+  __syncthreads();
 
   // Pre-load the first tile.
-  cg::memcpy_async(tileA, &sA[mem][tileA.meta_group_rank() * BK], &A[(bm + tileA.meta_group_rank()) * K], cuda::aligned_size_t<16>(BK * sizeof(float)));
-  cg::memcpy_async(tileB, &sB[mem][tileB.meta_group_rank() * BN], &B[tileB.meta_group_rank() * N + bn], cuda::aligned_size_t<16>(BN * sizeof(float)));
+  if(tId < BM) 
+    cuda::memcpy_async(
+      &sA[mem][tId * BK],
+      &A[(bm + tId) * K],
+      cuda::aligned_size_t<16>(BK * sizeof(float)),
+      bar
+    );
+
+  if(tId < BK)
+    cuda::memcpy_async(
+      &sB[mem][tId * BN],
+      &B[tId * N + bn],
+      cuda::aligned_size_t<16>(BN * sizeof(float)),
+      bar
+    );
 
   // Wait for the loads to complete.
-  cg::wait(block);
-  
+  bar.arrive_and_wait();
+
   for(unsigned int bk = BK; bk < K; bk += BK) {
-    cg::memcpy_async(tileA, &sA[buf][tileA.meta_group_rank() * BK], &A[(bm + tileA.meta_group_rank()) * K + bk], cuda::aligned_size_t<16>(BK * sizeof(float)));
-    cg::memcpy_async(tileB, &sB[buf][tileB.meta_group_rank() * BN], &B[(tileB.meta_group_rank() + bk) * N + bn], cuda::aligned_size_t<16>(BN * sizeof(float)));
+    // Load the next tile.
+    if(tId < BM) 
+      cuda::memcpy_async(
+        &sA[buf][tId * BK],
+        &A[(bm + tId) * K + bk],
+        cuda::aligned_size_t<16>(BK * sizeof(float)),
+        bar
+      );
+
+    if(tId < BK)
+      cuda::memcpy_async(
+        &sB[buf][tId * BN],
+        &B[(tId + bk) * N + bn],
+        cuda::aligned_size_t<16>(BN * sizeof(float)),
+        bar
+      );
 
     // Process the current tile.
     for(int k = 0; k < BK; k++)
@@ -68,14 +94,13 @@ __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, in
         for(int j = 0; j < TN; j++)
           acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
 
-    
     // Wait for the next tile to be loaded.
-    cg::wait(block);
+    bar.arrive_and_wait();
 
     // Swap buffers.
     buf ^= 1;
     mem ^= 1;
-  }
+  } 
 
   // Process the last tile.
   for(int k = 0; k < BK; k++)

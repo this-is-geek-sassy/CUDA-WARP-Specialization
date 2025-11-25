@@ -1,0 +1,51 @@
+╔══════════════════════════════════════════════════════════════════╗
+║              BENCHMARKING ALL VERSIONS (5 runs each)             ║
+╚══════════════════════════════════════════════════════════════════╝
+
+1. Benchmarking jacobi2d_baseline (32×16 threads, no optimization)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.129839s
+  Run 2: 0.129706s
+  Run 3: 0.129649s
+  Run 4: 0.129133s
+  Run 5: 0.129567s
+  Average: .129578s (129.578ms)
+
+2. Benchmarking jacobi2d_async (async stream execution)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.129747s
+  Run 2: 0.120467s
+  Run 3: 0.124185s
+  Run 4: 0.127194s
+  Run 5: 0.124812s
+  Average: .125281s (125.281ms)
+
+3. Benchmarking jacobi2d_shared (shared memory optimization)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.127114s
+  Run 2: 0.130417s
+  Run 3: 0.122968s
+  Run 4: 0.125025s
+  Run 5: 0.129882s
+  Average: .127081s (127.081ms)
+
+4. Benchmarking jacobi2d_double_buffer (double buffering)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.126738s
+  Run 2: 0.130323s
+  Run 3: 0.125611s
+  Run 4: 0.130466s
+  Run 5: 0.129913s
+  Average: .128610s (128.610ms)
+
+5. Benchmarking jacobi2d_warp_spec (warp specialization + double buffering)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.142028s
+  Run 2: 0.145999s
+  Run 3: 0.148729s
+  Run 4: 0.148327s
+  Run 5: 0.148730s
+  Average: .146762s (146.762ms)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Benchmark complete!

@@ -1,8 +1,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/11_dgemm_double_buffered_cpasync_driver.h" 
-#include "kernels/11_dgemm_double_buffered_cpasync.cuh"
+#include "drivers/12_dgemm_cuda_dma_sas_driver.h" 
+#include "kernels/12_dgemm_cuda_dma_sas.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,17 +23,15 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_double_buffered_cpasync_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 128;
-  const unsigned int BK = 16;
-  const unsigned int BN = 128;
-  const unsigned int TM = 4;
-  const unsigned int TN = 4;
-  const unsigned int TK = 2;
-  const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
+bool dgemm_cuda_dma_sas_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const unsigned int TILE_SIZE = 32;
+  const unsigned int COMPUTE_THREADS_PER_CTA = 256;
+  const unsigned int DMA_THREADS_PER_LD = 32;
+  const unsigned int NUM_DMA_LOADERS = 2;
+  const unsigned int TOTAL_THREADS = COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD;
 
-  dim3 gridDim(N/BN, M/BM, 1);
-  dim3 blockDim(BN/TN, BM/TM, 1);
+  dim3 gridDim((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE, 1);
+  dim3 blockDim(TOTAL_THREADS, 1, 1);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -49,9 +47,15 @@ bool dgemm_double_buffered_cpasync_driver(float alpha, float beta, int M, int N,
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Double Buffered Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching Bank Conflicts Free Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_double_buffered_cpasync<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_cuda_dma_sas<
+    TILE_SIZE,
+    COMPUTE_THREADS_PER_CTA,
+    DMA_THREADS_PER_LD,
+    NUM_DMA_LOADERS,
+    TOTAL_THREADS
+  ><<< gridDim, blockDim >>>(M, N, K, alpha, beta, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

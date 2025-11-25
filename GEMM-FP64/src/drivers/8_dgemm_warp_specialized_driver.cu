@@ -30,11 +30,11 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
   const unsigned int WARP_SIZE = 32;
-  const unsigned int NUM_LOAD_WARPS = 8;
+  const unsigned int NUM_LOAD_WARPS = 4;
   const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
   const unsigned int BDM = BM/TM;
   const unsigned int BDN = BN/TN;
@@ -71,7 +71,7 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
 
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
   if(!CUDA_CHECK(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared))) goto cleanup;
-  dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

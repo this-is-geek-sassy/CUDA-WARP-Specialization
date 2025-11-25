@@ -11,6 +11,8 @@
 #include "drivers/8_dgemm_warp_specialized_driver.h"
 #include "drivers/9_dgemm_named_barriers_driver.h"
 #include "drivers/10_dgemm_cuda_dma_driver.h"
+#include "drivers/11_dgemm_double_buffered_cpasync_driver.h"
+#include "drivers/12_dgemm_cuda_dma_sas_driver.h"
 
 /// @brief Used to store Matrix on the host.
 /// @param m Number of rows of the matrix.
@@ -221,6 +223,14 @@ int main(int argc, char* argv[]) {
       break;
     case 10:
       success = dgemm_cuda_dma_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      break;
+    case 11:
+      success = dgemm_double_buffered_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      break;
+    case 12:
+      success = dgemm_cuda_dma_sas_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     default:
