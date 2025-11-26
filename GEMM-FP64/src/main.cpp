@@ -130,12 +130,13 @@ void print(int M, int N, float* A) {
 int main(int argc, char* argv[]) {
   // Throw error on incorrect usage.
   if(argc < 3) {
-    std::cerr << "USAGE: <TEST_NO> <KERNEL_NO> <MODE>" << std::endl;
+    std::cerr << "USAGE: <TEST_NO> <KERNEL_NO> <MODE (Optional)>" << std::endl;
     return 1;
   }
 
   // Parse the mode: 0 (test) or 1 (debug)
-  const bool debug = std::stoi(argv[3]) == 1;
+  bool debug = 0;
+  if(argc >= 4) debug = std::stoi(argv[3]) == 1;
 
   // Parse test case number and generate filenames.
   int test_case_no = std::stoi(argv[1]);
@@ -189,51 +190,51 @@ int main(int argc, char* argv[]) {
   bool success = true;
   switch(kernel_no) {
     case 1:
-      success = dgemm_basic_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_basic_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 2:
-      success = dgemm_2d_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_2d_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 3:
-      success = dgemm_gmem_optm_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_gmem_optm_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 4:
-      success = dgemm_register_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_register_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 5:
-      success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 6:
-      success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 7:
-      success = dgemm_double_buffered_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_double_buffered_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 8:
-      success = dgemm_warp_specialized_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_warp_specialized_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 9:
-      success = dgemm_named_barriers_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_named_barriers_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 10:
-      success = dgemm_cuda_dma_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_cuda_dma_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 11:
-      success = dgemm_double_buffered_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_double_buffered_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 12:
-      success = dgemm_warp_specialized_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC);
+      success = dgemm_warp_specialized_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
       if(success) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     default:

@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC);
+bool dgemm_overlapped_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC, bool debug);
 
 #ifdef __cplusplus
 }

@@ -52,17 +52,15 @@ bool dgemm_basic_driver(float alpha, float beta, int M, int N, int K, float* hA,
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Basic Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
   kernel<<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;
-  std::cout << "DRIVER: Kernel finished successfully." << std::endl;
 
   if (!CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop))) goto cleanup;
-  std::cout << "Kernel execution time: " << milliseconds * 1000 << " us" << std::endl;
+  std::cout << milliseconds * 1000 << std::endl;
 
   if(!CUDA_CHECK(cudaMemcpy(hC, dC, M * N * sizeof(float), cudaMemcpyDeviceToHost))) goto cleanup;
 

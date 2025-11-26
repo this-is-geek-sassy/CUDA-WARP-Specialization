@@ -25,7 +25,7 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 
-bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC, bool debug) {
   const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
   
   const unsigned int BM = 64;
@@ -46,16 +46,19 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
 //   const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
   const size_t sharedMemSize = max_shmem_per_block;
 
-  std::cout << "--- GPU PARAMS ---" << std::endl;
-  device_props<0>();
-  std::cout << "--- LAUNCH PARAMS ---" << std::endl;
-  std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
-  std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
-  std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
-  std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
-  std::cout << "No. load threads:    " << NUM_LOAD_THREADS << std::endl;
-  std::cout << "No. compute threads:    " << NUM_COMPUTE_THREADS << std::endl;
-  std::cout << "---------------------" << std::endl;
+  if(debug) {
+    std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
+    std::cout << "--- GPU PARAMS ---" << std::endl;
+    device_props<0>();
+    std::cout << "--- LAUNCH PARAMS ---" << std::endl;
+    std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
+    std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
+    std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
+    std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
+    std::cout << "No. load threads:    " << NUM_LOAD_THREADS << std::endl;
+    std::cout << "No. compute threads:    " << NUM_COMPUTE_THREADS << std::endl;
+    std::cout << "---------------------" << std::endl;
+  }
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -71,7 +74,6 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
 
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
   dgemm_warp_specialized<BM, BK, BN, TM, TN, TK, NUM_LOAD_WARPS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
@@ -79,10 +81,9 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
   if (!CUDA_CHECK(cudaDeviceSynchronize())) goto cleanup;
-  std::cout << "DRIVER: Kernel finished successfully." << std::endl;
 
   if (!CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop))) goto cleanup;
-  std::cout << "Kernel execution time: " << milliseconds * 1000 << " us" << std::endl;
+  std::cout << milliseconds * 1000 << std::endl;
 
   if(!CUDA_CHECK(cudaMemcpy(hC, dC, M * N * sizeof(float), cudaMemcpyDeviceToHost))) goto cleanup;
 
