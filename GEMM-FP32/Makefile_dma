@@ -12,11 +12,18 @@ CUFILES := gemm_fp_32_cudaDMA.cu
 
 DATASET := -DHUMONGOUS_DATASET
 
-ARCH := -gencode arch=compute_86,code=sm_86
-CFLAGS := -O3
+# Rectangular tile configuration
+# TILE_M: Tile height (rows of output C)
+# TILE_N: Tile width (columns of output C)  
+# TILE_K: Tile depth (reduction dimension)
+# Default: 32x32x32 if not specified
+TILE_CONFIG := -DTILE_M=64 -DTILE_N=64 -DTILE_K=16
+
+ARCH := -gencode arch=compute_86,code=sm_89
+CFLAGS := -O3 
 
 all:
-	nvcc $(CFLAGS) $(DATASET) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
+	nvcc $(CFLAGS) $(DATASET) $(TILE_CONFIG) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
 
 clean:
 	rm -f *~ $(EXECUTABLE)

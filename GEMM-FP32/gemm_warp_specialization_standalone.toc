@@ -1,0 +1,10 @@
+\contentsline {section}{\numberline {1}GEMM with cudaDMA}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}GEMM Optimization with Warp Specialization}{2}{subsection.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.1}Overview}{2}{subsubsection.1.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.2}Thread Organization}{2}{subsubsection.1.1.2}%
+\contentsline {subsubsection}{\numberline {1.1.3}Implementation Variants}{2}{subsubsection.1.1.3}%
+\contentsline {subsubsection}{\numberline {1.1.4}Double Buffering Pipeline}{2}{subsubsection.1.1.4}%
+\contentsline {subsubsection}{\numberline {1.1.5}Performance Results}{3}{subsubsection.1.1.5}%
+\contentsline {subsubsection}{\numberline {1.1.6}Key Findings}{3}{subsubsection.1.1.6}%
+\contentsline {subsubsection}{\numberline {1.1.7}Technical Implementation Details}{3}{subsubsection.1.1.7}%
+\contentsline {subsubsection}{\numberline {1.1.8}Conclusions}{3}{subsubsection.1.1.8}%

@@ -223,7 +223,21 @@ make -f Makefile_dma
 # Build cudaDMA v2 version
 make -f Makefile_dma_v2 clean
 make -f Makefile_dma_v2
+
+# Build with custom rectangular tile dimensions
+nvcc -DTILE_M=64 -DTILE_N=32 -DTILE_K=32 -DSTANDARD_DATASET \
+     gemm_fp_32_cudaDMA.cu -o gemm_custom
 ```
+
+### Rectangular Tiles Support
+
+The kernels now support rectangular tiles with independent dimensions:
+
+- **TILE_M**: Tile height (default: 32)
+- **TILE_N**: Tile width (default: 32)
+- **TILE_K**: Tile depth (default: 32)
+
+See [RECTANGULAR_TILES.md](RECTANGULAR_TILES.md) for detailed configuration guide.
 
 ### Running Individual Kernels
 

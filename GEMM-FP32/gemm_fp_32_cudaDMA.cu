@@ -21,7 +21,7 @@
 
 #include "../gpu_utils.h"
 
-//define the error threshold for the results "not matching"
+// define the error threshold for the results "not matching"
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
 
 /* Declared constant values for ALPHA and BETA */
@@ -29,18 +29,18 @@
 #define BETA 2123.0f
 
 // CudaDMA configuration
-#define COMPUTE_THREADS_PER_CTA  256   // Compute threads (8x32 = 256)
-#define DMA_THREADS_PER_LD       32    // DMA threads per loader (1 warp)
-#define NUM_DMA_LOADERS          2     // 2 DMA loaders (one for A, one for B)
-#define TOTAL_THREADS           (COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD)
+#define COMPUTE_THREADS_PER_CTA 256 // Compute threads (8x32 = 256)
+#define DMA_THREADS_PER_LD 32       // DMA threads per loader (1 warp)
+#define NUM_DMA_LOADERS 2           // 2 DMA loaders (one for A, one for B)
+#define TOTAL_THREADS (COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD)
 
 #define RUN_ON_CPU
 
-void gemm(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-         fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj))
+void gemm(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, fp32_t POLYBENCH_2D(A, NI, NK, ni, nk),
+          fp32_t POLYBENCH_2D(B, NK, NJ, nk, nj), fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj))
 {
     int i, j, k;
-    
+
     for (i = 0; i < _PB_NI; i++)
     {
         for (j = 0; j < _PB_NJ; j++)
@@ -54,8 +54,8 @@ void gemm(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, fp32_t POLYBENCH_2D
     }
 }
 
-void init(int ni, int nj, int nk, fp32_t* alpha, fp32_t* beta, fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-        fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj))
+void init(int ni, int nj, int nk, fp32_t *alpha, fp32_t *beta, fp32_t POLYBENCH_2D(A, NI, NK, ni, nk),
+          fp32_t POLYBENCH_2D(B, NK, NJ, nk, nj), fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj))
 {
     int i, j;
 
@@ -66,7 +66,7 @@ void init(int ni, int nj, int nk, fp32_t* alpha, fp32_t* beta, fp32_t POLYBENCH_
     {
         for (j = 0; j < nk; j++)
         {
-            A[i][j] = ((fp32_t) i*j) / NI;
+            A[i][j] = ((fp32_t)i * j) / NI;
         }
     }
 
@@ -74,7 +74,7 @@ void init(int ni, int nj, int nk, fp32_t* alpha, fp32_t* beta, fp32_t POLYBENCH_
     {
         for (j = 0; j < nj; j++)
         {
-            B[i][j] = ((fp32_t) i*j) / NI;
+            B[i][j] = ((fp32_t)i * j) / NI;
         }
     }
 
@@ -82,289 +82,315 @@ void init(int ni, int nj, int nk, fp32_t* alpha, fp32_t* beta, fp32_t POLYBENCH_
     {
         for (j = 0; j < nj; j++)
         {
-            C[i][j] = ((fp32_t) i*j) / NI;
+            C[i][j] = ((fp32_t)i * j) / NI;
         }
     }
 }
 
-void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
-                   fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
+void compareResults(int ni, int nj, fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj),
+                    fp32_t POLYBENCH_2D(C_outputFromGpu, NI, NJ, ni, nj))
 {
     int i, j, fail;
     fail = 0;
-    
+
     // Debug: Print first few mismatches
     int printCount = 0;
-    
-    for (i=0; i < ni; i++) 
+
+    for (i = 0; i < ni; i++)
     {
-        for (j=0; j < nj; j++) 
+        for (j = 0; j < nj; j++)
         {
             fp32_t diff = percentDiff(C[i][j], C_outputFromGpu[i][j]);
-            if (diff > PERCENT_DIFF_ERROR_THRESHOLD) 
+            if (diff > PERCENT_DIFF_ERROR_THRESHOLD)
             {
                 fail++;
-                if (printCount < 5) {
-                    printf("Mismatch at [%d][%d]: CPU=%.6e, GPU=%.6e, diff=%.2f%%\n", 
+                if (printCount < 5)
+                {
+                    printf("Mismatch at [%d][%d]: CPU=%.6e, GPU=%.6e, diff=%.2f%%\n",
                            i, j, C[i][j], C_outputFromGpu[i][j], diff);
                     printCount++;
                 }
             }
         }
     }
-    printf("Non-Matching CPU-GPU Outputs Beyond Error Threshold of %4.2f Percent: %d\n", 
+    printf("Non-Matching CPU-GPU Outputs Beyond Error Threshold of %4.2f Percent: %d\n",
            PERCENT_DIFF_ERROR_THRESHOLD, fail);
 }
 
-void dumpMatrixToFile(bool should_i_dump, const char* filename, int ni, int nj,
-                     fp32_t POLYBENCH_2D(C_cpu,NI,NJ,ni,nj),
-                     fp32_t POLYBENCH_2D(C_baseline,NI,NJ,ni,nj),
-                     fp32_t POLYBENCH_2D(C_single,NI,NJ,ni,nj),
-                     fp32_t POLYBENCH_2D(C_double,NI,NJ,ni,nj))
+void dumpMatrixToFile(bool should_i_dump, const char *filename, int ni, int nj,
+                      fp32_t POLYBENCH_2D(C_cpu, NI, NJ, ni, nj),
+                      fp32_t POLYBENCH_2D(C_baseline, NI, NJ, ni, nj),
+                      fp32_t POLYBENCH_2D(C_single, NI, NJ, ni, nj),
+                      fp32_t POLYBENCH_2D(C_double, NI, NJ, ni, nj))
 {
     if (!should_i_dump)
         return;
     FILE *fp = fopen(filename, "a");
-    if (fp == NULL) {
+    if (fp == NULL)
+    {
         printf("Error: Could not open file %s for appending\n", filename);
         return;
     }
-    
+
     fprintf(fp, "GEMM Output Matrix Dump\n");
     fprintf(fp, "Matrix dimensions: %d x %d\n", ni, nj);
     fprintf(fp, "Generated on: %s\n", __DATE__);
     fprintf(fp, "========================================\n\n");
-    
+
     // Dump CPU result
     fprintf(fp, "=== Case 1: CPU Reference Implementation ===\n");
     fprintf(fp, "Description: Sequential CPU GEMM computation\n\n");
-    for (int i = 0; i < ni; i++) {
-        for (int j = 0; j < nj; j++) {
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
             fprintf(fp, "%.6e ", C_cpu[i][j]);
         }
         fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
-    
+
     // Dump GPU Baseline result
     fprintf(fp, "=== Case 2: GPU Baseline (Tiled GEMM) ===\n");
     fprintf(fp, "Description: Standard tiled GEMM with shared memory, no warp specialization\n\n");
-    for (int i = 0; i < ni; i++) {
-        for (int j = 0; j < nj; j++) {
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
             fprintf(fp, "%.6e ", C_baseline[i][j]);
         }
         fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
-    
+
     // Dump cudaDMA Single-Buffer result
     fprintf(fp, "=== Case 3: GPU cudaDMA Single-Buffer ===\n");
     fprintf(fp, "Description: Warp-specialized GEMM with cudaDMA, single buffering\n");
-    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n", 
+    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n",
             COMPUTE_THREADS_PER_CTA, DMA_THREADS_PER_LD);
-    for (int i = 0; i < ni; i++) {
-        for (int j = 0; j < nj; j++) {
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
             fprintf(fp, "%.6e ", C_single[i][j]);
         }
         fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
-    
+
     // Dump cudaDMA Double-Buffer result
     fprintf(fp, "=== Case 4: GPU cudaDMA Double-Buffer ===\n");
     fprintf(fp, "Description: Warp-specialized GEMM with cudaDMA, double buffering (ping-pong)\n");
-    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n", 
+    fprintf(fp, "Configuration: %d compute threads, %d DMA threads per loader\n\n",
             COMPUTE_THREADS_PER_CTA, DMA_THREADS_PER_LD);
-    for (int i = 0; i < ni; i++) {
-        for (int j = 0; j < nj; j++) {
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
             fprintf(fp, "%.6e ", C_double[i][j]);
         }
         fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
-    
+
     // Add statistical summary
     fprintf(fp, "========================================\n");
     fprintf(fp, "=== Statistical Summary ===\n\n");
-    
+
     // Calculate differences
     double max_diff_baseline = 0.0, max_diff_single = 0.0, max_diff_double = 0.0;
     double avg_diff_baseline = 0.0, avg_diff_single = 0.0, avg_diff_double = 0.0;
     int mismatch_baseline = 0, mismatch_single = 0, mismatch_double = 0;
-    
-    for (int i = 0; i < ni; i++) {
-        for (int j = 0; j < nj; j++) {
+
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
             double diff_baseline = percentDiff(C_cpu[i][j], C_baseline[i][j]);
             double diff_single = percentDiff(C_cpu[i][j], C_single[i][j]);
             double diff_double = percentDiff(C_cpu[i][j], C_double[i][j]);
-            
+
             avg_diff_baseline += diff_baseline;
             avg_diff_single += diff_single;
             avg_diff_double += diff_double;
-            
-            if (diff_baseline > max_diff_baseline) max_diff_baseline = diff_baseline;
-            if (diff_single > max_diff_single) max_diff_single = diff_single;
-            if (diff_double > max_diff_double) max_diff_double = diff_double;
-            
-            if (diff_baseline > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_baseline++;
-            if (diff_single > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_single++;
-            if (diff_double > PERCENT_DIFF_ERROR_THRESHOLD) mismatch_double++;
+
+            if (diff_baseline > max_diff_baseline)
+                max_diff_baseline = diff_baseline;
+            if (diff_single > max_diff_single)
+                max_diff_single = diff_single;
+            if (diff_double > max_diff_double)
+                max_diff_double = diff_double;
+
+            if (diff_baseline > PERCENT_DIFF_ERROR_THRESHOLD)
+                mismatch_baseline++;
+            if (diff_single > PERCENT_DIFF_ERROR_THRESHOLD)
+                mismatch_single++;
+            if (diff_double > PERCENT_DIFF_ERROR_THRESHOLD)
+                mismatch_double++;
         }
     }
-    
+
     int total_elements = ni * nj;
     avg_diff_baseline /= total_elements;
     avg_diff_single /= total_elements;
     avg_diff_double /= total_elements;
-    
+
     fprintf(fp, "Comparison vs CPU Reference:\n");
     fprintf(fp, "  GPU Baseline:\n");
     fprintf(fp, "    Max difference: %.6f%%\n", max_diff_baseline);
     fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_baseline);
-    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n",
             PERCENT_DIFF_ERROR_THRESHOLD, mismatch_baseline, total_elements);
     fprintf(fp, "\n");
-    
+
     fprintf(fp, "  cudaDMA Single-Buffer:\n");
     fprintf(fp, "    Max difference: %.6f%%\n", max_diff_single);
     fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_single);
-    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n",
             PERCENT_DIFF_ERROR_THRESHOLD, mismatch_single, total_elements);
     fprintf(fp, "\n");
-    
+
     fprintf(fp, "  cudaDMA Double-Buffer:\n");
     fprintf(fp, "    Max difference: %.6f%%\n", max_diff_double);
     fprintf(fp, "    Avg difference: %.6f%%\n", avg_diff_double);
-    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n", 
+    fprintf(fp, "    Elements beyond threshold (%.2f%%): %d / %d\n",
             PERCENT_DIFF_ERROR_THRESHOLD, mismatch_double, total_elements);
-    
+
     fclose(fp);
     printf("Matrix outputs dumped to: %s\n", filename);
 }
 
-__global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                                fp32_t *a, fp32_t *b, fp32_t *c)
+__global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                                 fp32_t *a, fp32_t *b, fp32_t *c)
 {
-    // Shared memory for tiling
-    __shared__ fp32_t As[TILE_SIZE][TILE_SIZE];
-    __shared__ fp32_t Bs[TILE_SIZE][TILE_SIZE];
-    
+    // Shared memory for tiling - rectangular tiles
+    __shared__ fp32_t As[TILE_M][TILE_K];
+    __shared__ fp32_t Bs[TILE_K][TILE_N];
+
     int bx = blockIdx.x;
     int by = blockIdx.y;
     int tx = threadIdx.x;
     int ty = threadIdx.y;
-    
+
     // Calculate global row and column for this thread
-    int row = by * TILE_SIZE + ty;
-    int col = bx * TILE_SIZE + tx;
-    
+    int row = by * TILE_M + ty;
+    int col = bx * TILE_N + tx;
+
     fp32_t sum = 0.0f;
-    
+
     // Loop over tiles
-    int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-    
-    for (int t = 0; t < numTiles; t++) {
+    int numTiles = (nk + TILE_K - 1) / TILE_K;
+
+    for (int t = 0; t < numTiles; t++)
+    {
         // Load tile from matrix A into shared memory
-        int aCol = t * TILE_SIZE + tx;
-        if (row < ni && aCol < nk)
+        int aCol = t * TILE_K + tx;
+        if (row < ni && aCol < nk && tx < TILE_K)
             As[ty][tx] = alpha * a[row * nk + aCol];
-        else
+        else if (ty < TILE_M && tx < TILE_K)
             As[ty][tx] = 0.0f;
-        
+
         // Load tile from matrix B into shared memory
-        int bRow = t * TILE_SIZE + ty;
-        if (bRow < nk && col < nj)
+        int bRow = t * TILE_K + ty;
+        if (bRow < nk && col < nj && ty < TILE_K)
             Bs[ty][tx] = b[bRow * nj + col];
-        else
+        else if (ty < TILE_K && tx < TILE_N)
             Bs[ty][tx] = 0.0f;
-        
+
         __syncthreads();
-        
-        // Compute partial dot product for this tile
-        #pragma unroll
-        for (int k = 0; k < TILE_SIZE; k++) {
+
+// Compute partial dot product for this tile
+#pragma unroll
+        for (int k = 0; k < TILE_K; k++)
+        {
             sum += As[ty][k] * Bs[k][tx];
         }
-        
+
         __syncthreads();
     }
-    
+
     // Write result to global memory
-    if (row < ni && col < nj) {
+    if (row < ni && col < nj)
+    {
         c[row * nj + col] = beta * c[row * nj + col] + sum;
     }
 }
 
 // cudaDMA-based GEMM kernel with warp specialization  --- single buffering
-__global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                                         fp32_t *a, fp32_t *b, fp32_t *c)
+__global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                                                          fp32_t *a, fp32_t *b, fp32_t *c)
 {
-    __shared__ fp32_t As[TILE_SIZE][TILE_SIZE];
-    __shared__ fp32_t Bs[TILE_SIZE][TILE_SIZE];
-    
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    __shared__ fp32_t As[TILE_M][TILE_K];
+    __shared__ fp32_t Bs[TILE_K][TILE_N];
+
+    cudaDMAStrided<true, 16, TILE_K * sizeof(fp32_t), DMA_THREADS_PER_LD, TILE_M>
         dma_ld_a(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
-                 nk * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
-    
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
-        dma_ld_b(1, COMPUTE_THREADS_PER_CTA, 
+                 nk * sizeof(fp32_t), TILE_K * sizeof(fp32_t));
+
+    cudaDMAStrided<true, 16, TILE_N * sizeof(fp32_t), DMA_THREADS_PER_LD, TILE_K>
+        dma_ld_b(1, COMPUTE_THREADS_PER_CTA,
                  COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD,
-                 nj * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
-    
+                 nj * sizeof(fp32_t), TILE_N * sizeof(fp32_t));
+
     int bx = blockIdx.x;
     int by = blockIdx.y;
-    int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-    
+    int numTiles = (nk + TILE_K - 1) / TILE_K;
+
     // Compute threads
     if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
         int thread_id = threadIdx.x;
-        constexpr int elements_per_thread = (TILE_SIZE * TILE_SIZE) / COMPUTE_THREADS_PER_CTA; // 4
-        
-        fp32_t sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        
+        constexpr int elements_per_thread = (TILE_M * TILE_N) / COMPUTE_THREADS_PER_CTA;
+
+        fp32_t sums[elements_per_thread];
+        for (int i = 0; i < elements_per_thread; i++)
+            sums[i] = 0.0f;
+
         // CRITICAL: Start the first DMA transfer BEFORE waiting
         dma_ld_a.start_async_dma();
         dma_ld_b.start_async_dma();
-        
-        for (int t = 0; t < numTiles; t++) 
+
+        for (int t = 0; t < numTiles; t++)
         {
             // Wait for current tile to be loaded
             dma_ld_a.wait_for_dma_finish();
             dma_ld_b.wait_for_dma_finish();
-            
+
             // Compute on this tile
             for (int elem = 0; elem < elements_per_thread; elem++)
             {
                 int linear_idx = thread_id * elements_per_thread + elem;
-                int ty = linear_idx / TILE_SIZE;
-                int tx = linear_idx % TILE_SIZE;
-                
-                #pragma unroll
-                for (int k = 0; k < TILE_SIZE; k++) {
+                int ty = linear_idx / TILE_N;
+                int tx = linear_idx % TILE_N;
+
+#pragma unroll
+                for (int k = 0; k < TILE_K; k++)
+                {
                     sums[elem] += As[ty][k] * Bs[k][tx];
                 }
             }
-            
+
             // Signal next transfer (if not last iteration)
-            if (t < numTiles - 1) {
+            if (t < numTiles - 1)
+            {
                 dma_ld_a.start_async_dma();
                 dma_ld_b.start_async_dma();
             }
         }
-        
-        #pragma unroll
+
+#pragma unroll
         // Write results
         for (int elem = 0; elem < elements_per_thread; elem++)
         {
             int linear_idx = thread_id * elements_per_thread + elem;
-            int ty = linear_idx / TILE_SIZE;
-            int tx = linear_idx % TILE_SIZE;
-            
-            int row = by * TILE_SIZE + ty;
-            int col = bx * TILE_SIZE + tx;
-            
-            if (row < ni && col < nj) {
+            int ty = linear_idx / TILE_N;
+            int tx = linear_idx % TILE_N;
+
+            int row = by * TILE_M + ty;
+            int col = bx * TILE_N + tx;
+
+            if (row < ni && col < nj)
+            {
                 c[row * nj + col] = beta * c[row * nj + col] + alpha * sums[elem];
             }
         }
@@ -374,14 +400,17 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
     {
         for (int t = 0; t < numTiles; t++)
         {
-            int aRow = by * TILE_SIZE;
-            int aCol = t * TILE_SIZE;
-            
+            int aRow = by * TILE_M;
+            int aCol = t * TILE_K;
+
             // Boundary check for source pointer
-            if (aRow < ni && aCol < nk) {
+            if (aRow < ni && aCol < nk)
+            {
                 fp32_t *src_ptr = &a[aRow * nk + aCol];
-                dma_ld_a.execute_dma(src_ptr, As);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
-            } else {
+                dma_ld_a.execute_dma(src_ptr, As); // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
+            }
+            else
+            {
                 // Still need to participate in synchronization even if out of bounds
                 dma_ld_a.wait_for_dma_start();
                 dma_ld_a.finish_async_dma();
@@ -393,14 +422,17 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
     {
         for (int t = 0; t < numTiles; t++)
         {
-            int bRow = t * TILE_SIZE;
-            int bCol = bx * TILE_SIZE;
-            
+            int bRow = t * TILE_K;
+            int bCol = bx * TILE_N;
+
             // Boundary check for source pointer
-            if (bRow < nk && bCol < nj) {
+            if (bRow < nk && bCol < nj)
+            {
                 fp32_t *src_ptr = &b[bRow * nj + bCol];
-                dma_ld_b.execute_dma(src_ptr, Bs);       // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
-            } else {
+                dma_ld_b.execute_dma(src_ptr, Bs); // Wraps the synchronization mechanism: Abstracts wait_for_dma_start() and finish_async_dma()
+            }
+            else
+            {
                 // Still need to participate in synchronization
                 dma_ld_b.wait_for_dma_start();
                 dma_ld_b.finish_async_dma();
@@ -410,90 +442,97 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
 }
 
 // cudaDMA-based GEMM kernel with warp specialization  --- double buffering
-__global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                                         fp32_t *a, fp32_t *b, fp32_t *c)
+__global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                                                          fp32_t *a, fp32_t *b, fp32_t *c)
 {
     // Double buffering: two buffers for A and two for B
-    __shared__ fp32_t As_0[TILE_SIZE][TILE_SIZE];
-    __shared__ fp32_t Bs_0[TILE_SIZE][TILE_SIZE];
-    __shared__ fp32_t As_1[TILE_SIZE][TILE_SIZE];
-    __shared__ fp32_t Bs_1[TILE_SIZE][TILE_SIZE];
-    
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
+    __shared__ fp32_t As_0[TILE_M][TILE_K];
+    __shared__ fp32_t Bs_0[TILE_K][TILE_N];
+    __shared__ fp32_t As_1[TILE_M][TILE_K];
+    __shared__ fp32_t Bs_1[TILE_K][TILE_N];
+
+    cudaDMAStrided<true, 16, TILE_K * sizeof(fp32_t), DMA_THREADS_PER_LD, TILE_M>
         dma_ld_a(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
-                 nk * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
-    
-    cudaDMAStrided<true, 16, 128, DMA_THREADS_PER_LD, TILE_SIZE>
-        dma_ld_b(1, COMPUTE_THREADS_PER_CTA, 
+                 nk * sizeof(fp32_t), TILE_K * sizeof(fp32_t));
+
+    cudaDMAStrided<true, 16, TILE_N * sizeof(fp32_t), DMA_THREADS_PER_LD, TILE_K>
+        dma_ld_b(1, COMPUTE_THREADS_PER_CTA,
                  COMPUTE_THREADS_PER_CTA + DMA_THREADS_PER_LD,
-                 nj * sizeof(fp32_t), TILE_SIZE * sizeof(fp32_t));
-    
+                 nj * sizeof(fp32_t), TILE_N * sizeof(fp32_t));
+
     int bx = blockIdx.x;
     int by = blockIdx.y;
-    int numTiles = (nk + TILE_SIZE - 1) / TILE_SIZE;
-    
+    int numTiles = (nk + TILE_K - 1) / TILE_K;
+
     // Compute threads
     if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
     {
         int thread_id = threadIdx.x;
-        int elements_per_thread = (TILE_SIZE * TILE_SIZE) / COMPUTE_THREADS_PER_CTA; // 4
-        
+        constexpr int elements_per_thread = (TILE_M * TILE_N) / COMPUTE_THREADS_PER_CTA;
+
         fp32_t sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        
+
         // Load first tile into buffer 0
         dma_ld_a.start_async_dma();
         dma_ld_b.start_async_dma();
-        
-        for (int t = 0; t < numTiles; t++) 
+
+        for (int t = 0; t < numTiles; t++)
         {
             // Determine which buffer to use for current computation (ping-pong)
-            int curr_buf = t & 1;  // 0 or 1
+            int curr_buf = t & 1; // 0 or 1
             // int next_buf = 1 - curr_buf;  // Next buffer for DMA load (for readability)
-            
+
             // Wait for current tile to be loaded
             dma_ld_a.wait_for_dma_finish();
             dma_ld_b.wait_for_dma_finish();
-            
+
             // Signal next tile load into alternate buffer (if not last iteration)
-            if (t < numTiles - 1) {
+            if (t < numTiles - 1)
+            {
                 dma_ld_a.start_async_dma();
                 dma_ld_b.start_async_dma();
             }
-            
+
             // Compute on current tile while next tile is being loaded
             for (int elem = 0; elem < elements_per_thread; elem++)
             {
                 int linear_idx = thread_id * elements_per_thread + elem;
-                int ty = linear_idx / TILE_SIZE;
-                int tx = linear_idx % TILE_SIZE;
-                
+                int ty = linear_idx / TILE_N;
+                int tx = linear_idx % TILE_N;
+
                 // Select current buffer based on curr_buf
-                if (curr_buf == 0) {
-                    #pragma unroll
-                    for (int k = 0; k < TILE_SIZE; k++) {
+                if (curr_buf == 0)
+                {
+#pragma unroll
+                    for (int k = 0; k < TILE_K; k++)
+                    {
                         sums[elem] += As_0[ty][k] * Bs_0[k][tx];
                     }
-                } else {
-                    #pragma unroll
-                    for (int k = 0; k < TILE_SIZE; k++) {
+                }
+                else
+                {
+#pragma unroll
+                    for (int k = 0; k < TILE_K; k++)
+                    {
                         sums[elem] += As_1[ty][k] * Bs_1[k][tx];
                     }
                 }
             }
         }
-        
-        #pragma unroll
+
+#pragma unroll
         // Write results
         for (int elem = 0; elem < elements_per_thread; elem++)
         {
             int linear_idx = thread_id * elements_per_thread + elem;
-            int ty = linear_idx / TILE_SIZE;
-            int tx = linear_idx % TILE_SIZE;
-            
-            int row = by * TILE_SIZE + ty;
-            int col = bx * TILE_SIZE + tx;
-            
-            if (row < ni && col < nj) {
+            int ty = linear_idx / TILE_N;
+            int tx = linear_idx % TILE_N;
+
+            int row = by * TILE_M + ty;
+            int col = bx * TILE_N + tx;
+
+            if (row < ni && col < nj)
+            {
                 c[row * nj + col] = beta * c[row * nj + col] + alpha * sums[elem];
             }
         }
@@ -503,22 +542,28 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
     {
         for (int t = 0; t < numTiles; t++)
         {
-            int aRow = by * TILE_SIZE;
-            int aCol = t * TILE_SIZE;
-            
+            int aRow = by * TILE_M;
+            int aCol = t * TILE_K;
+
             // Determine which buffer to load into (ping-pong)
             int buf_idx = t & 1;
-            
+
             // Boundary check for source pointer
-            if (aRow < ni && aCol < nk) {
+            if (aRow < ni && aCol < nk)
+            {
                 fp32_t *src_ptr = &a[aRow * nk + aCol];
                 // Load into alternating buffer
-                if (buf_idx == 0) {
+                if (buf_idx == 0)
+                {
                     dma_ld_a.execute_dma(src_ptr, As_0);
-                } else {
+                }
+                else
+                {
                     dma_ld_a.execute_dma(src_ptr, As_1);
                 }
-            } else {
+            }
+            else
+            {
                 // Still need to participate in synchronization even if out of bounds
                 dma_ld_a.wait_for_dma_start();
                 dma_ld_a.finish_async_dma();
@@ -530,22 +575,28 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
     {
         for (int t = 0; t < numTiles; t++)
         {
-            int bRow = t * TILE_SIZE;
-            int bCol = bx * TILE_SIZE;
-            
+            int bRow = t * TILE_K;
+            int bCol = bx * TILE_N;
+
             // Determine which buffer to load into (ping-pong)
             int buf_idx = t & 1;
-            
+
             // Boundary check for source pointer
-            if (bRow < nk && bCol < nj) {
+            if (bRow < nk && bCol < nj)
+            {
                 fp32_t *src_ptr = &b[bRow * nj + bCol];
                 // Load into alternating buffer
-                if (buf_idx == 0) {
+                if (buf_idx == 0)
+                {
                     dma_ld_b.execute_dma(src_ptr, Bs_0);
-                } else {
+                }
+                else
+                {
                     dma_ld_b.execute_dma(src_ptr, Bs_1);
                 }
-            } else {
+            }
+            else
+            {
                 // Still need to participate in synchronization
                 dma_ld_b.wait_for_dma_start();
                 dma_ld_b.finish_async_dma();
@@ -554,12 +605,11 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
     }
 }
 
-
-void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                    fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-                    fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), 
-                    fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
-                    fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
+void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                   fp32_t POLYBENCH_2D(A, NI, NK, ni, nk),
+                   fp32_t POLYBENCH_2D(B, NK, NJ, nk, nj),
+                   fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj),
+                   fp32_t POLYBENCH_2D(C_outputFromGpu, NI, NJ, ni, nj))
 {
     fp32_t *A_gpu;
     fp32_t *B_gpu;
@@ -568,27 +618,29 @@ void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
     cudaMalloc((void **)&A_gpu, sizeof(fp32_t) * NI * NK);
     cudaMalloc((void **)&B_gpu, sizeof(fp32_t) * NK * NJ);
     cudaMalloc((void **)&C_gpu, sizeof(fp32_t) * NI * NJ);
-    
+
     cudaMemcpy(A_gpu, A, sizeof(fp32_t) * NI * NK, cudaMemcpyHostToDevice);
     cudaMemcpy(B_gpu, B, sizeof(fp32_t) * NK * NJ, cudaMemcpyHostToDevice);
     cudaMemcpy(C_gpu, C, sizeof(fp32_t) * NI * NJ, cudaMemcpyHostToDevice);
-    
-    dim3 block(TILE_SIZE, TILE_SIZE);
-    dim3 grid((NJ + TILE_SIZE - 1) / TILE_SIZE,
-              (NI + TILE_SIZE - 1) / TILE_SIZE);
+
+    dim3 block(DIM_THREAD_BLOCK_X, DIM_THREAD_BLOCK_Y);
+    dim3 grid((NJ + TILE_N - 1) / TILE_N,
+              (NI + TILE_M - 1) / TILE_M);
 
     /* Start timer. */
     polybench_start_instruments;
 
     // Launch FP32-optimized kernel
-    gemm_kernel_fp32<<< grid, block >>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
+    gemm_kernel_fp32<<<grid, block>>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel launch error: %s\n", cudaGetErrorString(err));
     }
     cudaDeviceSynchronize();
     err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel execution error: %s\n", cudaGetErrorString(err));
     }
 
@@ -597,18 +649,18 @@ void gemmCuda_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
     polybench_stop_instruments;
     polybench_print_instruments;
 
-    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);    
-    
+    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);
+
     cudaFree(A_gpu);
     cudaFree(B_gpu);
     cudaFree(C_gpu);
 }
 
-void gemmCuda_fp32_cudaDMA_single(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                                   fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-                                   fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), 
-                                   fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
-                                   fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
+void gemmCuda_fp32_cudaDMA_single(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                                  fp32_t POLYBENCH_2D(A, NI, NK, ni, nk),
+                                  fp32_t POLYBENCH_2D(B, NK, NJ, nk, nj),
+                                  fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj),
+                                  fp32_t POLYBENCH_2D(C_outputFromGpu, NI, NJ, ni, nj))
 {
     fp32_t *A_gpu;
     fp32_t *B_gpu;
@@ -617,28 +669,30 @@ void gemmCuda_fp32_cudaDMA_single(int ni, int nj, int nk, fp32_t alpha, fp32_t b
     cudaMalloc((void **)&A_gpu, sizeof(fp32_t) * NI * NK);
     cudaMalloc((void **)&B_gpu, sizeof(fp32_t) * NK * NJ);
     cudaMalloc((void **)&C_gpu, sizeof(fp32_t) * NI * NJ);
-    
+
     cudaMemcpy(A_gpu, A, sizeof(fp32_t) * NI * NK, cudaMemcpyHostToDevice);
     cudaMemcpy(B_gpu, B, sizeof(fp32_t) * NK * NJ, cudaMemcpyHostToDevice);
     cudaMemcpy(C_gpu, C, sizeof(fp32_t) * NI * NJ, cudaMemcpyHostToDevice);
-    
+
     // Grid uses TILE_SIZE for blocking
     dim3 block(TOTAL_THREADS, 1);
-    dim3 grid((NJ + TILE_SIZE - 1) / TILE_SIZE,
-              (NI + TILE_SIZE - 1) / TILE_SIZE);
+    dim3 grid((NJ + TILE_N - 1) / TILE_N,
+              (NI + TILE_M - 1) / TILE_M);
 
     /* Start timer. */
     polybench_start_instruments;
 
     // Launch cudaDMA single-buffering kernel
-    gemm_kernel_fp32_cudaDMA_single_buffering<<< grid, block >>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
+    gemm_kernel_fp32_cudaDMA_single_buffering<<<grid, block>>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel launch error: %s\n", cudaGetErrorString(err));
     }
     cudaDeviceSynchronize();
     err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel execution error: %s\n", cudaGetErrorString(err));
     }
 
@@ -647,18 +701,18 @@ void gemmCuda_fp32_cudaDMA_single(int ni, int nj, int nk, fp32_t alpha, fp32_t b
     polybench_stop_instruments;
     polybench_print_instruments;
 
-    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);    
-    
+    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);
+
     cudaFree(A_gpu);
     cudaFree(B_gpu);
     cudaFree(C_gpu);
 }
 
-void gemmCuda_fp32_cudaDMA_double(int ni, int nj, int nk, fp32_t alpha, fp32_t beta, 
-                                   fp32_t POLYBENCH_2D(A,NI,NK,ni,nk), 
-                                   fp32_t POLYBENCH_2D(B,NK,NJ,nk,nj), 
-                                   fp32_t POLYBENCH_2D(C,NI,NJ,ni,nj), 
-                                   fp32_t POLYBENCH_2D(C_outputFromGpu,NI,NJ,ni,nj))
+void gemmCuda_fp32_cudaDMA_double(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
+                                  fp32_t POLYBENCH_2D(A, NI, NK, ni, nk),
+                                  fp32_t POLYBENCH_2D(B, NK, NJ, nk, nj),
+                                  fp32_t POLYBENCH_2D(C, NI, NJ, ni, nj),
+                                  fp32_t POLYBENCH_2D(C_outputFromGpu, NI, NJ, ni, nj))
 {
     fp32_t *A_gpu;
     fp32_t *B_gpu;
@@ -667,28 +721,30 @@ void gemmCuda_fp32_cudaDMA_double(int ni, int nj, int nk, fp32_t alpha, fp32_t b
     cudaMalloc((void **)&A_gpu, sizeof(fp32_t) * NI * NK);
     cudaMalloc((void **)&B_gpu, sizeof(fp32_t) * NK * NJ);
     cudaMalloc((void **)&C_gpu, sizeof(fp32_t) * NI * NJ);
-    
+
     cudaMemcpy(A_gpu, A, sizeof(fp32_t) * NI * NK, cudaMemcpyHostToDevice);
     cudaMemcpy(B_gpu, B, sizeof(fp32_t) * NK * NJ, cudaMemcpyHostToDevice);
     cudaMemcpy(C_gpu, C, sizeof(fp32_t) * NI * NJ, cudaMemcpyHostToDevice);
-    
+
     // Grid uses TILE_SIZE for blocking
     dim3 block(TOTAL_THREADS, 1);
-    dim3 grid((NJ + TILE_SIZE - 1) / TILE_SIZE,
-              (NI + TILE_SIZE - 1) / TILE_SIZE);
+    dim3 grid((NJ + TILE_N - 1) / TILE_N,
+              (NI + TILE_M - 1) / TILE_M);
 
     /* Start timer. */
     polybench_start_instruments;
 
     // Launch cudaDMA double-buffering kernel
-    gemm_kernel_fp32_cudaDMA_double_buffering<<< grid, block >>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
+    gemm_kernel_fp32_cudaDMA_double_buffering<<<grid, block>>>(ni, nj, nk, alpha, beta, A_gpu, B_gpu, C_gpu);
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel launch error: %s\n", cudaGetErrorString(err));
     }
     cudaDeviceSynchronize();
     err = cudaGetLastError();
-    if (err != cudaSuccess) {
+    if (err != cudaSuccess)
+    {
         printf("CUDA kernel execution error: %s\n", cudaGetErrorString(err));
     }
 
@@ -697,8 +753,8 @@ void gemmCuda_fp32_cudaDMA_double(int ni, int nj, int nk, fp32_t alpha, fp32_t b
     polybench_stop_instruments;
     polybench_print_instruments;
 
-    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);    
-    
+    cudaMemcpy(C_outputFromGpu, C_gpu, sizeof(fp32_t) * NI * NJ, cudaMemcpyDeviceToHost);
+
     cudaFree(A_gpu);
     cudaFree(B_gpu);
     cudaFree(C_gpu);
@@ -714,78 +770,81 @@ int main(int argc, char *argv[])
     /* Variable declaration/allocation. */
     fp32_t alpha;
     fp32_t beta;
-    POLYBENCH_2D_ARRAY_DECL(A,fp32_t,NI,NK,ni,nk);
-    POLYBENCH_2D_ARRAY_DECL(B,fp32_t,NK,NJ,nk,nj);
-    POLYBENCH_2D_ARRAY_DECL(C,fp32_t,NI,NJ,ni,nj);
-    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu,fp32_t,NI,NJ,ni,nj);
-    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu_cudaDMA_single,fp32_t,NI,NJ,ni,nj);
-    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu_cudaDMA_double,fp32_t,NI,NJ,ni,nj);
+    POLYBENCH_2D_ARRAY_DECL(A, fp32_t, NI, NK, ni, nk);
+    POLYBENCH_2D_ARRAY_DECL(B, fp32_t, NK, NJ, nk, nj);
+    POLYBENCH_2D_ARRAY_DECL(C, fp32_t, NI, NJ, ni, nj);
+    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu, fp32_t, NI, NJ, ni, nj);
+    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu_cudaDMA_single, fp32_t, NI, NJ, ni, nj);
+    POLYBENCH_2D_ARRAY_DECL(C_outputFromGpu_cudaDMA_double, fp32_t, NI, NJ, ni, nj);
 
     init(ni, nj, nk, &alpha, &beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(C));
-    
+
     // Copy C to output arrays for GPU computation
     memcpy(C_outputFromGpu, C, sizeof(fp32_t) * NI * NJ);
     memcpy(C_outputFromGpu_cudaDMA_single, C, sizeof(fp32_t) * NI * NJ);
     memcpy(C_outputFromGpu_cudaDMA_double, C, sizeof(fp32_t) * NI * NJ);
-    
+
     GPU_argv_init();
-    
+
     // Run baseline GEMM
     printf("\n=== Running Baseline GEMM ===\n");
-    gemmCuda_fp32(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), 
+    gemmCuda_fp32(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B),
                   POLYBENCH_ARRAY(C_outputFromGpu), POLYBENCH_ARRAY(C_outputFromGpu));
 
     // Run cudaDMA GEMM with single buffering
     printf("\n=== Running cudaDMA GEMM (Single-Buffer) ===\n");
-    gemmCuda_fp32_cudaDMA_single(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), 
+    gemmCuda_fp32_cudaDMA_single(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B),
                                  POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single));
 
     // Run cudaDMA GEMM with double buffering
     printf("\n=== Running cudaDMA GEMM (Double-Buffer) ===\n");
-    gemmCuda_fp32_cudaDMA_double(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), 
+    gemmCuda_fp32_cudaDMA_double(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B),
                                  POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
 
-    #ifdef RUN_ON_CPU
-        // Skip CPU execution for very large datasets (>= 8192) to avoid excessive runtime
-        if (ni < 8192 && nj < 8192 && nk < 8192) {
-            /* Start timer. */
-            polybench_start_instruments;
+#ifdef RUN_ON_CPU
+    // Skip CPU execution for very large datasets (>= 8192) to avoid excessive runtime
+    if (ni < 8192 && nj < 8192 && nk < 8192)
+    {
+        /* Start timer. */
+        polybench_start_instruments;
 
-            gemm(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(C));
-            
-            /* Stop and print timer. */
-            printf("\nCPU Time in seconds:\n");
-            polybench_stop_instruments;
-            polybench_print_instruments;
-        
-            printf("\n=== Comparing Baseline GPU vs CPU ===\n");
-            compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu));
-            
-            printf("\n=== Comparing cudaDMA Single-Buffer GPU vs CPU ===\n");
-            compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single));
-            
-            printf("\n=== Comparing cudaDMA Double-Buffer GPU vs CPU ===\n");
-            compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
-        } else {
-            printf("\n=== Skipping CPU execution for dataset %dx%dx%d (too large) ===\n", ni, nj, nk);
-            printf("CPU execution skipped to avoid excessive runtime.\n");
-        }
-    #endif
+        gemm(ni, nj, nk, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(C));
+
+        /* Stop and print timer. */
+        printf("\nCPU Time in seconds:\n");
+        polybench_stop_instruments;
+        polybench_print_instruments;
+
+        printf("\n=== Comparing Baseline GPU vs CPU ===\n");
+        compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu));
+
+        printf("\n=== Comparing cudaDMA Single-Buffer GPU vs CPU ===\n");
+        compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single));
+
+        printf("\n=== Comparing cudaDMA Double-Buffer GPU vs CPU ===\n");
+        compareResults(ni, nj, POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
+    }
+    else
+    {
+        printf("\n=== Skipping CPU execution for dataset %dx%dx%d (too large) ===\n", ni, nj, nk);
+        printf("CPU execution skipped to avoid excessive runtime.\n");
+    }
+#endif
 
     // Dump all matrix outputs to a single file
     printf("\n=== Dumping Matrix Outputs ===\n");
-    dumpMatrixToFile(false, "gemm_output_dump.txt", ni, nj, 
-                     POLYBENCH_ARRAY(C), 
+    dumpMatrixToFile(false, "gemm_output_dump.txt", ni, nj,
+                     POLYBENCH_ARRAY(C),
                      POLYBENCH_ARRAY(C_outputFromGpu),
                      POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_single),
                      POLYBENCH_ARRAY(C_outputFromGpu_cudaDMA_double));
 
     POLYBENCH_FREE_ARRAY(A);
-    POLYBENCH_FREE_ARRAY(B);  
-    POLYBENCH_FREE_ARRAY(C);  
-    POLYBENCH_FREE_ARRAY(C_outputFromGpu); 
-    POLYBENCH_FREE_ARRAY(C_outputFromGpu_cudaDMA_single); 
-    POLYBENCH_FREE_ARRAY(C_outputFromGpu_cudaDMA_double); 
+    POLYBENCH_FREE_ARRAY(B);
+    POLYBENCH_FREE_ARRAY(C);
+    POLYBENCH_FREE_ARRAY(C_outputFromGpu);
+    POLYBENCH_FREE_ARRAY(C_outputFromGpu_cudaDMA_single);
+    POLYBENCH_FREE_ARRAY(C_outputFromGpu_cudaDMA_double);
 
     return 0;
 }
