@@ -24,9 +24,9 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_2d_tiled_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int BM = 64;
+  const unsigned int BM = 128;
   const unsigned int BK = 16;
-  const unsigned int BN = 64;
+  const unsigned int BN = 128;
   const unsigned int TM = 4;
   const unsigned int TN = 4;
 

@@ -51,9 +51,15 @@ __global__ void dgemm_register_tiled(float alpha, float beta, int M, int N, int 
 
     for(int wk = 0; wk < BK; wk += TK) {
       // Tiled loads into Register Memory (Need to check PTX and SASS to confirm unrolling and chunking)
+      #pragma unroll
       for(int k = 0; k < TK; k++) {
-        for(int i = 0; i < TM; i++) a_reg[i][k] = sA[(ty + i * TM_STEP) * BK + wk + k];
-        for(int j = 0; j < TN; j++) b_reg[k][j] = sB[(wk + k) * BN + tx + j * TN_STEP]; 
+        #pragma unroll
+        for(int i = 0; i < TM; i++) 
+          a_reg[i][k] = sA[(ty + i * TM_STEP) * BK + wk + k];
+
+        #pragma unroll
+        for(int j = 0; j < TN; j++)
+          b_reg[k][j] = sB[(wk + k) * BN + tx + j * TN_STEP]; 
       }
   
       // FMA operations on Register Memory (Need to check PTX and SASS to confirm unrolling)
