@@ -30,9 +30,6 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
   const unsigned int tx = threadIdx.x;
   const unsigned int ty = threadIdx.y;
 
-  constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
-  constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
-
   unsigned int bm = blockIdx.y * BM;
   unsigned int bn = blockIdx.x * BN;
 
@@ -61,7 +58,7 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
     for(int k = 0; k < BK; k++)
       for(int i = 0; i < TM; i++)
         for(int j = 0; j < TN; j++)
-          acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+          acc_reg[i][j] = fma(sA[mem][(ty * TM + i) * BK + k], sB[mem][k * BN + tx * TN + j], acc_reg[i][j]);
 
     __syncthreads();
 
@@ -78,12 +75,12 @@ __global__ void dgemm_double_buffered(float alpha, float beta, int M, int N, int
   for(int k = 0; k < BK; k++)
     for(int i = 0; i < TM; i++)
       for(int j = 0; j < TN; j++)
-        acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+        acc_reg[i][j] = fma(sA[mem][(ty * TM + i) * BK + k], sB[mem][k * BN + tx * TN + j], acc_reg[i][j]);
  
   // Epilogue
   for(int i = 0; i < TM; i++)
     for(int j = 0; j < TN; j++)
-      C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
+      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
 }
 
 #endif // DGEMM_DOUBLE_BUFFERED_CUH

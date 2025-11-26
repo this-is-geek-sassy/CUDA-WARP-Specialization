@@ -111,6 +111,7 @@ bool verify(float alpha, float beta, int M, int N, float* hP, float* hC) {
 
   if(flag) std::cerr << "ERROR: Incorrect output!" << std::endl;
   else std::cout << "Correct output!" << std::endl;
+
   return flag;
 }
 
@@ -191,51 +192,51 @@ int main(int argc, char* argv[]) {
   switch(kernel_no) {
     case 1:
       success = dgemm_basic_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 2:
       success = dgemm_2d_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 3:
       success = dgemm_gmem_optm_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 4:
       success = dgemm_register_tiled_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 5:
       success = dgemm_bank_conflicts_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 6:
       success = dgemm_overlapped_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 7:
       success = dgemm_double_buffered_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 8:
       success = dgemm_warp_specialized_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 9:
       success = dgemm_named_barriers_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 10:
       success = dgemm_cuda_dma_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 11:
       success = dgemm_double_buffered_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     case 12:
       success = dgemm_warp_specialized_cpasync_driver(alpha, beta, M, N, K, hA.ptr, hB.ptr, hC, debug);
-      if(success) verify(alpha, beta, M, N, hP.ptr, hC);
+      if(success && debug) verify(alpha, beta, M, N, hP.ptr, hC);
       break;
     default:
       std::cerr << "ERROR: Invalid kernel requested!" << std::endl;

@@ -4,14 +4,28 @@
 #include <cuda.h>
 
 template<unsigned int GPU_DEVICE>
+size_t get_max_optin_limit()
+{
+	int max_optin_limit;
+	cudaDeviceGetAttribute(&max_optin_limit, cudaDevAttrMaxSharedMemoryPerBlockOptin, GPU_DEVICE);
+	return max_optin_limit;
+}
+
+template<unsigned int GPU_DEVICE>
 size_t get_max_shmem_per_block()
 {
 	cudaSetDevice(GPU_DEVICE);
-
 	cudaDeviceProp prop;
 	cudaGetDeviceProperties(&prop, GPU_DEVICE);
-
 	return prop.sharedMemPerBlock;
+}
+
+template<unsigned int GPU_DEVICE>
+size_t get_max_shmem_per_sm()
+{
+	int max_smem_per_sm;
+	cudaDeviceGetAttribute(&max_smem_per_sm, cudaDevAttrMaxSharedMemoryPerMultiprocessor, GPU_DEVICE);
+	return max_smem_per_sm;
 }
 
 template<unsigned int GPU_DEVICE>

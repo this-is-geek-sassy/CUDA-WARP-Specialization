@@ -4,6 +4,7 @@
 #include "drivers/9_dgemm_named_barriers_driver.h" 
 #include "kernels/9_dgemm_named_barriers.cuh"
 #include "utils/gpu_utils.cuh"
+#include "headers/config.h"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -25,17 +26,17 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_named_barriers_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC, bool debug) {
-  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  const size_t max_optin_limit = get_max_optin_limit<0>();
   
-  const unsigned int BM = 64;
-  const unsigned int BK = 16;
-  const unsigned int BN = 64;
-  const unsigned int TM = 4;
-  const unsigned int TN = 4;
-  const unsigned int TK = 2;
-  const unsigned int WARP_SIZE = 32;
-  const unsigned int NUM_TILE_LOAD_WARPS = 4;
-  const unsigned int NUM_GLOBAL_LOAD_WARPS = 4;
+  const unsigned int BM = BM9;
+  const unsigned int BK = BK9;
+  const unsigned int BN = BN9;
+  const unsigned int TM = TM9;
+  const unsigned int TN = TN9;
+  const unsigned int TK = TK9;
+  const unsigned int WARP_SIZE = WARP_SIZE9;
+  const unsigned int NUM_TILE_LOAD_WARPS = NUM_TILE_LOAD_WARPS9;
+  const unsigned int NUM_GLOBAL_LOAD_WARPS = NUM_GLOBAL_LOAD_WARPS9;
   const unsigned int NUM_LOAD_THREADS = WARP_SIZE * (NUM_TILE_LOAD_WARPS + NUM_GLOBAL_LOAD_WARPS);
   const unsigned int BDM = BM/TM;
   const unsigned int BDN = BN/TN;
@@ -44,11 +45,11 @@ bool dgemm_named_barriers_driver(float alpha, float beta, int M, int N, int K, f
   auto kernel =  dgemm_named_barriers<BM, BK, BN, TM, TN, TK, NUM_TILE_LOAD_WARPS, NUM_GLOBAL_LOAD_WARPS, WARP_SIZE>;
   cudaFuncAttributes attr;
   cudaFuncGetAttributes(&attr, kernel);
+  if(MAX_SMEM) cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, max_optin_limit);
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-  // const size_t sharedMemSize =  (BM * BN + BK * (BM + BN) * 2) * sizeof(float);
-  const size_t sharedMemSize = max_shmem_per_block - attr.sharedSizeBytes;
+  const size_t sharedMemSize = MAX_SMEM ? max_optin_limit - attr.sharedSizeBytes : (BM * BN + BK * (BM + BN) * 2) * sizeof(float);
 
   if(debug) {
     std::cout << "DRIVER: Launching Named Barrier Kernel..." << std::endl;

@@ -4,6 +4,7 @@
 #include "drivers/4_dgemm_register_tiled_driver.h" 
 #include "kernels/4_dgemm_register_tiled.cuh"
 #include "utils/gpu_utils.cuh"
+#include "headers/config.h"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -25,24 +26,24 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_register_tiled_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC, bool debug) {
-  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  const size_t max_optin_limit = get_max_optin_limit<0>();
   
-  const unsigned int BM = 128;
-  const unsigned int BK = 16;
-  const unsigned int BN = 128;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
+  const unsigned int BM = BM4;
+  const unsigned int BK = BK4;
+  const unsigned int BN = BN4;
+  const unsigned int TM = TM4;
+  const unsigned int TN = TN4;
+  const unsigned int TK = TK4;
   const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
 
   auto kernel = dgemm_register_tiled<BM, BK, BN, TM, TN, TK, NUM_THREADS>;
   cudaFuncAttributes attr;
   cudaFuncGetAttributes(&attr, kernel);
+  if(MAX_SMEM) cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, max_optin_limit);
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
-//   const size_t sharedMemSize = max_shmem_per_block - attr.sharedSizeBytes;
+  const size_t sharedMemSize = MAX_SMEM ? max_optin_limit - attr.sharedSizeBytes : BK * (BM + BN) * sizeof(float);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;

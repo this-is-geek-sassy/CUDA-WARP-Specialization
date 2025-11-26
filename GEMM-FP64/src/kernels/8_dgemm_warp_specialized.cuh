@@ -24,7 +24,6 @@ template<unsigned int BM, unsigned int BK, unsigned int BN,
          unsigned int TM, unsigned int TN, unsigned int TK,
          unsigned int NUM_LOAD_WARPS, unsigned int WARP_SIZE>
 __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
   constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
 
   extern __shared__ float sm[];
@@ -79,7 +78,7 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
       for(int k = 0; k < BK; k++)
         for(int i = 0; i < TM; i++)
           for(int j = 0; j < TN; j++)
-            acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+            acc_reg[i][j] = fma(sA[mem][(ty * TM + i) * BK + k], sB[mem][k * BN + tx * TN + j], acc_reg[i][j]);
 
       mem ^= 1; // Swap Buffers
     }
@@ -87,7 +86,8 @@ __global__ void dgemm_warp_specialized(float alpha, float beta, int M, int N, in
     // Epilogue
     for(int i = 0; i < TM; i++)
       for(int j = 0; j < TN; j++)
-        C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
+        C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
+
   }
 }
 

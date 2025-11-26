@@ -4,6 +4,7 @@
 #include "drivers/10_dgemm_cuda_dma_driver.h" 
 #include "kernels/10_dgemm_cuda_dma.cuh"
 #include "utils/gpu_utils.cuh"
+#include "headers/config.h"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -25,25 +26,29 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC, bool debug) {
-  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  const size_t max_optin_limit = get_max_optin_limit<0>();
   
-  const unsigned int BM = 64;
-  const unsigned int BK = 16;
-  const unsigned int BN = 64;
-  const unsigned int TM = 8;
-  const unsigned int TN = 8;
-  const unsigned int TK = 4;
-  const unsigned int WARP_SIZE = 32;
-  const unsigned int NUM_LOAD_WARPS = 8;
+  const unsigned int BM = BM10;
+  const unsigned int BK = BK10;
+  const unsigned int BN = BN10;
+  const unsigned int TM = TM10;
+  const unsigned int TN = TN10;
+  const unsigned int TK = TK10;
+  const unsigned int WARP_SIZE = WARP_SIZE10;
+  const unsigned int NUM_LOAD_WARPS = NUM_LOAD_WARPS10;
   const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
   const unsigned int BDM = BM/TM;
   const unsigned int BDN = BN/TN;
   const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
 
+  auto kernel = dgemm_cuda_dma<BM, BK, BN, TM, TN, TK, NUM_LOAD_THREADS, NUM_COMPUTE_THREADS, WARP_SIZE>;
+  cudaFuncAttributes attr;
+  cudaFuncGetAttributes(&attr, kernel);
+  if(MAX_SMEM) cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, max_optin_limit);
+
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-//   const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
-  const size_t sharedMemSize = 49152;
+  const size_t sharedMemSize = MAX_SMEM ? max_optin_limit - attr.sharedSizeBytes :  BK * (BM + BN) * 2 * sizeof(float);
 
   if(debug) {
     std::cout << "DRIVER: Launching cudaDMA Kernel..." << std::endl;
@@ -71,9 +76,8 @@ bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* 
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_cuda_dma<BM, BK, BN, TM, TN, TK, NUM_LOAD_THREADS, NUM_COMPUTE_THREADS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  kernel<<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

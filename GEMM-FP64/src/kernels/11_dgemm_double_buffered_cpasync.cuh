@@ -21,9 +21,10 @@
 /// @param A Pointer to A matrix (M x K)
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
-template<unsigned int BM, unsigned int BK, unsigned int BN, unsigned int TM, unsigned int TN, unsigned int TK, unsigned int NUM_THREADS>
+template<unsigned int BM, unsigned int BK, unsigned int BN,
+         unsigned int TM, unsigned int TN, unsigned int TK,
+         unsigned int NUM_THREADS>
 __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
   constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
 
   __shared__ cuda::barrier<cuda::thread_scope_block> bar;
@@ -89,10 +90,10 @@ __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, in
       );
 
     // Process the current tile.
-    for(int k = 0; k < BK; k++)
-      for(int i = 0; i < TM; i++)
-        for(int j = 0; j < TN; j++)
-          acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+      for(int k = 0; k < BK; k++)
+        for(int i = 0; i < TM; i++)
+          for(int j = 0; j < TN; j++)
+            acc_reg[i][j] = fma(sA[mem][(ty * TM + i) * BK + k], sB[mem][k * BN + tx * TN + j], acc_reg[i][j]);
 
     // Wait for the next tile to be loaded.
     bar.arrive_and_wait();
@@ -106,12 +107,13 @@ __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, in
   for(int k = 0; k < BK; k++)
     for(int i = 0; i < TM; i++)
       for(int j = 0; j < TN; j++)
-        acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
+        acc_reg[i][j] = fma(sA[mem][(ty * TM + i) * BK + k], sB[mem][k * BN + tx * TN + j], acc_reg[i][j]);
  
   // Epilogue
   for(int i = 0; i < TM; i++)
     for(int j = 0; j < TN; j++)
-      C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
+      C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
+
 }
 
 #endif // DGEMM_DOUBLE_BUFFERED_CPASYNC_CUH
