@@ -129,7 +129,7 @@ __global__ void convolution3D_kernel(int ni, int nj, int nk, DATA_TYPE* A, DATA_
 	// Remaining 16 warps (512 threads) wait and then all compute together
 	bool isLoader = (warpId < 16);
 
-	// WARP SPECIALIZATION: Only loader warps load data
+	// WARP SPECIALIZATION: Only loader warps load data using cp.async
 	if (isLoader) {
 		// 512 loader threads cooperate to load all data
 		// Total elements per slice: 34 x 35 = 1190 elements
@@ -150,16 +150,20 @@ __global__ void convolution3D_kernel(int ni, int nj, int nk, DATA_TYPE* A, DATA_
 			int global_k = blockIdx.x * blockDim.x + dk - 1;
 			int i_offset = (slice == 0) ? (i - 1) : ((slice == 1) ? i : (i + 1));
 			
-			// Load data with boundary checks
+			// Load data with boundary checks using cp.async
 			if (i_offset >= 0 && i_offset < ni && global_j >= 0 && global_j < nj && global_k >= 0 && global_k < nk) {
-				tile[buffer][slice][dj][dk] = A[i_offset*(NK * NJ) + global_j*NK + global_k];
+				uint32_t smem_addr = __cvta_generic_to_shared(&tile[buffer][slice][dj][dk]);
+				const DATA_TYPE* src = &A[i_offset*(NK * NJ) + global_j*NK + global_k];
+				asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(smem_addr), "l"(src));
 			} else {
 				tile[buffer][slice][dj][dk] = 0.0f;
 			}
 		}
 	}
 
-	// Synchronize: loader warps finished loading, compute warps can now proceed
+	// Commit and wait for all cp.async operations, then synchronize
+	asm volatile("cp.async.commit_group;\n");
+	asm volatile("cp.async.wait_group 0;\n");
 	__syncthreads();
 
 	// ALL warps compute (both loader and non-loader warps participate in computation)

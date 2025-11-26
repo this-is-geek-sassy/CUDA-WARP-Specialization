@@ -20,12 +20,12 @@
 # if !defined(N)
 /* Define the possible dataset sizes. */
 #  ifdef MINI_DATASET
-#define TSTEPS 20
+#define TSTEPS 100
 #define N 1000
 #  endif
 
 #  ifdef SMALL_DATASET
-#define TSTEPS 20
+#define TSTEPS 100
 #define N 1000
 #  endif
 
@@ -35,12 +35,12 @@
 #  endif
 
 #  ifdef LARGE_DATASET
-#define TSTEPS 500
+#define TSTEPS 100
 #define N 8192
 #  endif
 
 #  ifdef EXTRALARGE_DATASET
-#define TSTEPS 1000
+#define TSTEPS 100
 #define N 16384
 #  endif
 # endif /* !N */

@@ -1,4 +1,4 @@
-# Makefile for 3D Convolution Implementations
+# Makefile for GEMM Tensor Core Implementations
 # Various optimization strategies for performance comparison
 
 # Compiler and flags
@@ -6,37 +6,43 @@ NVCC := nvcc
 ARCH := -arch=sm_89
 CFLAGS := -O3
 
-# All executables - keeping only baseline, double buffer, and warp specialization
-EXECUTABLES := conv3d_baseline conv3d_double_buffer conv3d_warp_spec
+# All executables
+EXECUTABLES := gemm_tensor gemm_warp_spec_single_cpasync gemm_warp_spec_double_cpasync gemm_tf32
 
 # Default target
 all: $(EXECUTABLES)
 	@echo "✓ All implementations compiled successfully!"
 	@echo ""
 	@echo "Available executables:"
-	@echo "  - conv3d_baseline      : Baseline FP32 (no optimization, 32×32 threads)"
-	@echo "  - conv3d_double_buffer : Double buffering only (no warp specialization)"
-	@echo "  - conv3d_warp_spec     : Double buffering + warp specialization"
+	@echo "  - gemm_tensor                  : Baseline (FP16 with FP32 accumulation)"
+	@echo "  - gemm_warp_spec_single_cpasync: Warp specialization + single buffer + cp.async"
+	@echo "  - gemm_warp_spec_double_cpasync: Warp specialization + double buffering + cp.async"
+	@echo "  - gemm_tf32                    : TF32 precision (FP32 input with TF32 tensor cores)"
 
-# Baseline - 32×32 block size (1024 threads = 32 warps per block)
-conv3d_baseline: 3DConvolution.cu 3DConvolution.cuh
-	@echo "Compiling conv3d_baseline (32×32 threads, no optimization)..."
+# Baseline - simple implementation
+gemm_tensor: gemm_tensor.cu gemm_tensor.cuh
+	@echo "Compiling gemm_tensor (baseline)..."
 	$(NVCC) $(CFLAGS) $(ARCH) $< -o $@
 
-# Double buffering only
-conv3d_double_buffer: 3DConvolution_double_buffer.cu 3DConvolution.cuh
-	@echo "Compiling conv3d_double_buffer (double buffering without warp specialization)..."
+# Warp specialization with single buffer + cp.async
+gemm_warp_spec_single_cpasync: gemm_warp_spec_single_cpasync.cu gemm_tensor.cuh
+	@echo "Compiling gemm_warp_spec_single_cpasync (warp spec + single buffer + cp.async)..."
 	$(NVCC) $(CFLAGS) $(ARCH) $< -o $@
 
-# Warp specialization with double buffering
-conv3d_warp_spec: 3DConvolution_warp_spec.cu 3DConvolution.cuh
-	@echo "Compiling conv3d_warp_spec (double buffering + warp specialization)..."
+# Warp specialization + double buffering + cp.async
+gemm_warp_spec_double_cpasync: gemm_warp_spec_double_cpasync.cu gemm_tensor.cuh
+	@echo "Compiling gemm_warp_spec_double_cpasync (warp spec + double buffer + cp.async)..."
+	$(NVCC) $(CFLAGS) $(ARCH) $< -o $@
+
+# TF32 precision (FP32 input with TF32 tensor cores)
+gemm_tf32: gemm_tf32.cu gemm_tensor.cuh
+	@echo "Compiling gemm_tf32 (TF32 precision)..."
 	$(NVCC) $(CFLAGS) $(ARCH) $< -o $@
 
 # Clean all executables and object files
 clean:
 	@echo "Cleaning..."
-	rm -f $(EXECUTABLES) *.o conv3d_shared conv3d_async conv3d_optimized
+	rm -f $(EXECUTABLES) *.o gemm_warp_spec_single gemm_warp_spec_cpasync gemm_warp_spec_double gemm_double_buffer gemm_warp_spec_double_412
 	@echo "✓ Clean complete"
 
 # Test all versions
@@ -46,20 +52,14 @@ test: all
 	@echo "║                    TESTING ALL VERSIONS                          ║"
 	@echo "╚══════════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "1. Testing baseline (32×32 threads)..."
-	@./conv3d_baseline 2>&1 | grep -A1 "GPU Time"
+	@echo "1. Testing baseline..."
+	@./gemm_tensor 2>&1 | grep -A1 "GPU Tensor Core"
 	@echo ""
-	@./conv3d_baseline 2>&1 | grep "Non-Matching"
+	@echo "2. Testing warp spec single + cp.async..."
+	@./gemm_warp_spec_single_cpasync 2>&1 | grep -A1 "GPU Tensor Core"
 	@echo ""
-	@echo "2. Testing double buffering (no warp spec)..."
-	@./conv3d_double_buffer 2>&1 | grep -A1 "GPU Time"
-	@echo ""
-	@./conv3d_double_buffer 2>&1 | grep "Non-Matching"
-	@echo ""
-	@echo "3. Testing warp specialization + double buffering..."
-	@./conv3d_warp_spec 2>&1 | grep -A1 "GPU Time"
-	@echo ""
-	@./conv3d_warp_spec 2>&1 | grep "Non-Matching"
+	@echo "3. Testing warp spec + double buffer + cp.async..."
+	@./gemm_warp_spec_double_cpasync 2>&1 | grep -A1 "GPU Tensor Core"
 	@echo ""
 	@echo "✓ All tests complete"
 
@@ -70,11 +70,11 @@ benchmark: all
 	@echo "║              BENCHMARKING ALL VERSIONS (5 runs each)             ║"
 	@echo "╚══════════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "1. Benchmarking conv3d_baseline (32×32 threads, no optimization)..."
+	@echo "1. Benchmarking gemm_tensor (baseline)..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@sum=0; \
 	for i in 1 2 3 4 5; do \
-		time=$$(./conv3d_baseline 2>&1 | grep -A1 "GPU Time" | tail -1); \
+		time=$$(./gemm_tensor 2>&1 | grep -A1 "GPU Tensor Core" | tail -1); \
 		printf "  Run %d: %ss\n" $$i "$$time"; \
 		sum=$$(echo "$$sum + $$time" | bc -l); \
 	done; \
@@ -82,11 +82,11 @@ benchmark: all
 	ms=$$(echo "scale=3; $$avg * 1000" | bc -l); \
 	printf "  Average: %ss (%.3fms)\n" "$$avg" "$$ms"
 	@echo ""
-	@echo "2. Benchmarking conv3d_double_buffer (double buffering without warp spec)..."
+	@echo "2. Benchmarking gemm_warp_spec_single_cpasync (warp spec + single buffer + cp.async)..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@sum=0; \
 	for i in 1 2 3 4 5; do \
-		time=$$(./conv3d_double_buffer 2>&1 | grep -A1 "GPU Time" | tail -1); \
+		time=$$(./gemm_warp_spec_single_cpasync 2>&1 | grep -A1 "GPU Tensor Core" | tail -1); \
 		printf "  Run %d: %ss\n" $$i "$$time"; \
 		sum=$$(echo "$$sum + $$time" | bc -l); \
 	done; \
@@ -94,11 +94,11 @@ benchmark: all
 	ms=$$(echo "scale=3; $$avg * 1000" | bc -l); \
 	printf "  Average: %ss (%.3fms)\n" "$$avg" "$$ms"
 	@echo ""
-	@echo "3. Benchmarking conv3d_warp_spec (double buffering + warp specialization)..."
+	@echo "3. Benchmarking gemm_warp_spec_double_cpasync (warp spec + double buffer + cp.async)..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@sum=0; \
 	for i in 1 2 3 4 5; do \
-		time=$$(./conv3d_warp_spec 2>&1 | grep -A1 "GPU Time" | tail -1); \
+		time=$$(./gemm_warp_spec_double_cpasync 2>&1 | grep -A1 "GPU Tensor Core" | tail -1); \
 		printf "  Run %d: %ss\n" $$i "$$time"; \
 		sum=$$(echo "$$sum + $$time" | bc -l); \
 	done; \
@@ -110,11 +110,12 @@ benchmark: all
 	@echo "✓ Benchmark complete!"
 	@echo ""
 
+
 # Help message
 help:
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════════╗"
-	@echo "║            3D Convolution - Build Instructions                  ║"
+	@echo "║            GEMM Tensor Core - Build Instructions                ║"
 	@echo "╚══════════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "Available targets:"
@@ -125,15 +126,11 @@ help:
 	@echo "  make help      - Show this help message"
 	@echo ""
 	@echo "Individual targets:"
-	@echo "  make conv3d_baseline       - Baseline implementation (32×32 threads, no optimization)"
-	@echo "  make conv3d_double_buffer  - Double buffering only (no warp specialization)"
-	@echo "  make conv3d_warp_spec      - Double buffering + warp specialization"
+	@echo "  make gemm_tensor           - Baseline implementation"
+	@echo "  make gemm_double_buffer    - Double buffering only"
+	@echo "  make gemm_warp_spec_single - Warp specialization (single buffer)"
+	@echo "  make gemm_warp_spec_double        - Warp spec + double buffering"
 	@echo ""
-	@echo "Configuration:"
-	@echo "  - Volume size: 768×768×768 (STANDARD_DATASET)"
-	@echo "  - Kernel: 3×3×3 stencil with 9 coefficients"
-	@echo "  - Block size: 32×32 = 1024 threads = 32 warps per block"
-	@echo "  - Grid: 2D (j,k dimensions), loops over i dimension"
-	@echo ""
+
 
 .PHONY: all clean test benchmark help

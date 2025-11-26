@@ -122,35 +122,44 @@ __global__ void convolution3D_kernel(int ni, int nj, int nk, DATA_TYPE* A, DATA_
 
 	int buffer = 0; // Current buffer index
 
-	// Load all 3 i-slices into buffer 0
+	// Load all 3 i-slices into buffer 0 using cp.async
 	for (int dj = ty; dj < DIM_THREAD_BLOCK_Y + 2; dj += blockDim.y) {
 		for (int dk = tx; dk < DIM_THREAD_BLOCK_X + 2; dk += blockDim.x) {
 			int global_j = blockIdx.y * blockDim.y + dj - 1;
 			int global_k = blockIdx.x * blockDim.x + dk - 1;
 			
-			// Load i-1 slice
+			// Load i-1 slice using cp.async
 			if (i > 0 && global_j >= 0 && global_j < nj && global_k >= 0 && global_k < nk) {
-				tile[buffer][0][dj][dk] = A[(i - 1)*(NK * NJ) + global_j*NK + global_k];
+				uint32_t smem_addr = __cvta_generic_to_shared(&tile[buffer][0][dj][dk]);
+				const DATA_TYPE* src = &A[(i - 1)*(NK * NJ) + global_j*NK + global_k];
+				asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(smem_addr), "l"(src));
 			} else {
 				tile[buffer][0][dj][dk] = 0.0f;
 			}
 			
-			// Load i slice
+			// Load i slice using cp.async
 			if (i >= 0 && i < ni && global_j >= 0 && global_j < nj && global_k >= 0 && global_k < nk) {
-				tile[buffer][1][dj][dk] = A[i*(NK * NJ) + global_j*NK + global_k];
+				uint32_t smem_addr = __cvta_generic_to_shared(&tile[buffer][1][dj][dk]);
+				const DATA_TYPE* src = &A[i*(NK * NJ) + global_j*NK + global_k];
+				asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(smem_addr), "l"(src));
 			} else {
 				tile[buffer][1][dj][dk] = 0.0f;
 			}
 			
-			// Load i+1 slice
+			// Load i+1 slice using cp.async
 			if (i < ni - 1 && global_j >= 0 && global_j < nj && global_k >= 0 && global_k < nk) {
-				tile[buffer][2][dj][dk] = A[(i + 1)*(NK * NJ) + global_j*NK + global_k];
+				uint32_t smem_addr = __cvta_generic_to_shared(&tile[buffer][2][dj][dk]);
+				const DATA_TYPE* src = &A[(i + 1)*(NK * NJ) + global_j*NK + global_k];
+				asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(smem_addr), "l"(src));
 			} else {
 				tile[buffer][2][dj][dk] = 0.0f;
 			}
 		}
 	}
 
+	// Commit and wait for all cp.async operations
+	asm volatile("cp.async.commit_group;\n");
+	asm volatile("cp.async.wait_group 0;\n");
 	__syncthreads();
 
 	// Compute convolution from current buffer

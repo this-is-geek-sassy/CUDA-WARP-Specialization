@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <math.h>
+#include <stdint.h>
 #include <cooperative_groups.h>
 
 #define POLYBENCH_TIME 1
