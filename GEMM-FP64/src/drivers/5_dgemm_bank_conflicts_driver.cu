@@ -60,7 +60,7 @@ bool dgemm_bank_conflicts_driver(float alpha, float beta, int M, int N, int K, f
 
   std::cout << "DRIVER: Launching Bank Conflicts Free Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_bank_conflicts<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_bank_conflicts<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

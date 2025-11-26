@@ -31,7 +31,7 @@ __global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, flo
   constexpr unsigned int NUM_LOAD_THREADS_PER_LD = NUM_LOAD_WARPS * WARP_SIZE / 2;
   constexpr unsigned int NUM_COMPUTE_THREADS = NUM_COMPUTE_WARPS * WARP_SIZE;
 
-  __shared__ float sm[2 * BK * (BM + BN)];
+  extern __shared__ float sm[];
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
 

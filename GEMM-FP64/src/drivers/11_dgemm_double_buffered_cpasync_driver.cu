@@ -31,9 +31,10 @@ bool dgemm_double_buffered_cpasync_driver(float alpha, float beta, int M, int N,
   const unsigned int TN = 4;
   const unsigned int TK = 2;
   const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
-
+  
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
+  const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -51,7 +52,7 @@ bool dgemm_double_buffered_cpasync_driver(float alpha, float beta, int M, int N,
 
   std::cout << "DRIVER: Launching Double Buffered Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_double_buffered_cpasync<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim>>>(alpha, beta, M, N, K, dA, dB, dC);
+  dgemm_double_buffered_cpasync<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

@@ -25,7 +25,7 @@ __global__ void dgemm_bank_conflicts(float alpha, float beta, int M, int N, int 
   constexpr unsigned int BDM = (BM/TM); // blockIdx.y (compile time constant)
   constexpr unsigned int BDN = (BN/TN); // blockIdx.x (compile time constant)
 
-  __shared__ float sm[BK * (BM + BN)];
+  extern __shared__ float sm[];
   float* sA = &sm[0];
   float* sB = &sm[BM * BK];
 

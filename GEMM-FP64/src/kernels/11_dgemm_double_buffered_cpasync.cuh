@@ -27,7 +27,7 @@ __global__ void dgemm_double_buffered_cpasync(float alpha, float beta, int M, in
   constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
 
   __shared__ cuda::barrier<cuda::thread_scope_block> bar;
-  __shared__ alignas(16) float sm[2 * BK * (BM + BN)];
+  extern __shared__ float sm[];
 
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};

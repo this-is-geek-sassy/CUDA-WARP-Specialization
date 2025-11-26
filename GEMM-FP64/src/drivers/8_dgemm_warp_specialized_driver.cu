@@ -3,6 +3,7 @@
 #include <iostream>
 #include "drivers/8_dgemm_warp_specialized_driver.h" 
 #include "kernels/8_dgemm_warp_specialized.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -42,6 +43,8 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
   const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
 
+  std::cout << "--- GPU PARAMS ---" << std::endl;
+  device_props<0>();
   std::cout << "--- LAUNCH PARAMS ---" << std::endl;
   std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
   std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
