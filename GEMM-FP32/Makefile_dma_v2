@@ -10,13 +10,21 @@ CUFILES := gemm_fp_32_cudaDMA_v2.cu
 # -DHUGE_DATASET         4096x4096
 # -DHUMONGOUS_DATASET    8192x8192
 
-DATASET := -DSTANDARD_DATASET
+DATASET := -DLARGE_DATASET
 
-ARCH := -gencode arch=compute_86,code=sm_86
+# Rectangular tile configuration
+# Override these on command line: make TILE_M=64 TILE_N=64 TILE_K=16
+# Note: For cudaDMAv2, use square tiles (32x32x32) to ensure proper thread coverage
+TILE_M ?= 64
+TILE_N ?= 32
+TILE_K ?= 16
+TILE_CONFIG := -DTILE_M=$(TILE_M) -DTILE_N=$(TILE_N) -DTILE_K=$(TILE_K)
+
+ARCH := -gencode arch=compute_86,code=sm_89
 CFLAGS := -O3
 
 all:
-	nvcc $(CFLAGS) $(DATASET) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
+	nvcc $(CFLAGS) $(DATASET) $(TILE_CONFIG) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
 
 clean:
 	rm -f *~ $(EXECUTABLE)

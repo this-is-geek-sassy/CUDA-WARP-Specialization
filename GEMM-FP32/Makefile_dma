@@ -10,7 +10,7 @@ CUFILES := gemm_fp_32_cudaDMA.cu
 # -DHUGE_DATASET         4096x4096
 # -DHUMONGOUS_DATASET    8192x8192
 
-DATASET := -DHUMONGOUS_DATASET
+DATASET := -DSTANDARD_DATASET
 
 # Rectangular tile configuration
 # TILE_M: Tile height (rows of output C)
@@ -20,7 +20,8 @@ DATASET := -DHUMONGOUS_DATASET
 TILE_CONFIG := -DTILE_M=64 -DTILE_N=64 -DTILE_K=16
 
 ARCH := -gencode arch=compute_86,code=sm_89
-CFLAGS := -O3 
+CFLAGS := -O3 --ptxas-options=-v
+
 
 all:
 	nvcc $(CFLAGS) $(DATASET) $(TILE_CONFIG) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
