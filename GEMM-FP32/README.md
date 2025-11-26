@@ -44,8 +44,11 @@ Standard tiled GEMM implementation without warp specialization.
 
 **Features:**
 
-- Tiled approach using shared memory (32×32 tiles)
-- All threads perform both memory loading and computation
+- Tiled approach using shared memory with rectangular tiles support
+- Linear striding approach for efficient tile loading
+- All threads cooperatively load tiles using linearized indexing
+- Each thread computes multiple output elements (up to 16 for large tiles)
+- Supports flexible tile dimensions: TILE_M × TILE_N × TILE_K
 - No overlap between memory transfer and computation
 
 **Performance:** Baseline reference for comparison
@@ -81,22 +84,31 @@ Warp-specialized GEMM using cudaDMA v1 library.
 cudaDMAStrided<
     true,        // DO_SYNC: synchronize with compute threads
     16,          // ALIGNMENT: 16 bytes (float4 vectorization)
-    128,         // BYTES_PER_ELMT: 32 floats × 4 bytes = 128 bytes (one tile row)
+    TILE_K*4,    // BYTES_PER_ELMT: TILE_K floats × 4 bytes (one tile row)
     32,          // DMA_THREADS: 32 threads per loader warp
-    32           // NUM_ELMTS: 32 rows per tile
+    TILE_M       // NUM_ELMTS: TILE_M rows per tile
 >
 ```
+
+**Rectangular Tiles Support:**
+
+- Fully supports flexible tile dimensions (TILE_M, TILE_N, TILE_K)
+- Dynamically sized accumulator arrays (up to 16 elements per thread)
+- Optimized for various tile shapes: 64×32×16, 32×64×16, 64×64×16, etc.
+- Each compute thread handles `(TILE_M × TILE_N) / 256` output elements
 
 **Key Features:**
 
 - Single buffering: Load → Sync → Compute
 - Dedicated warps for memory operations
 - Improved memory coalescing
+- Adaptive to different tile configurations
 
 **Performance Metrics:**
 
-- **Speedup over Baseline:** ~1.25× (25% improvement)
-- **Benefit:** Optimized memory access patterns
+- **Speedup over Baseline:** ~1.25× (25% improvement) with square tiles
+- **Rectangular Tiles:** 64×32×16 achieves similar or better performance
+- **Benefit:** Optimized memory access patterns with flexible tiling
 
 ---
 
@@ -107,17 +119,20 @@ Enhanced warp-specialized GEMM using cudaDMAv2 with double buffering.
 **Double Buffering Architecture:**
 
 ```
-Shared Memory Layout:
+Shared Memory Layout (rectangular tiles):
 ┌─────────────────────┐
-│  As_0 [32×32]       │  ← Buffer 0 for matrix A
+│  As_0 [TILE_M×TILE_K]│  ← Buffer 0 for matrix A
 ├─────────────────────┤
-│  Bs_0 [32×32]       │  ← Buffer 0 for matrix B
+│  Bs_0 [TILE_K×TILE_N]│  ← Buffer 0 for matrix B
 ├─────────────────────┤
-│  As_1 [32×32]       │  ← Buffer 1 for matrix A
+│  As_1 [TILE_M×TILE_K]│  ← Buffer 1 for matrix A
 ├─────────────────────┤
-│  Bs_1 [32×32]       │  ← Buffer 1 for matrix B
+│  Bs_1 [TILE_K×TILE_N]│  ← Buffer 1 for matrix B
 └─────────────────────┘
-Total: 16 KB (2× single buffer)
+Example sizes:
+- 32×32×32: 16 KB total (8 KB per buffer)
+- 64×32×16: 20 KB total (10 KB per buffer)
+- 64×64×32: 48 KB total (24 KB per buffer)
 ```
 
 **Pipeline Execution:**
@@ -141,24 +156,33 @@ Comp: │  Wait   │Use B_0  │Use B_1  │Use B_0  │
 CudaDMAStrided<  // Note: Capital 'C' in v2
     true,        // DO_SYNC: synchronize with compute threads
     16,          // ALIGNMENT: 16 bytes (float4 vectorization)
-    128,         // BYTES_PER_THREAD: work per DMA thread (4096÷32)
-    128,         // BYTES_PER_ELMT: 32 floats × 4 bytes = 128 bytes
+    16,          // BYTES_PER_THREAD: 16 bytes (4 floats) per DMA thread
+    TILE_K*4,    // BYTES_PER_ELMT: TILE_K floats × 4 bytes per row
     32,          // DMA_THREADS: 32 threads per loader warp
-    32           // NUM_ELMTS: 32 rows per tile
+    TILE_M       // NUM_ELMTS: TILE_M rows per tile
 >
 ```
+
+**Rectangular Tiles Support:**
+
+- Enhanced support for flexible rectangular tiles
+- Dynamically sized accumulator arrays adapt to tile dimensions
+- Tested configurations: 32×32×32, 64×32×16, 32×64×16, 64×64×16
+- Automatic calculation of elements per thread: `(TILE_M × TILE_N) / 256`
 
 **Key Features:**
 
 - **Double Buffering:** Overlap memory transfer with computation
 - **Ping-Pong Buffers:** Alternate between two buffer sets
 - **Enhanced API:** Additional `BYTES_PER_THREAD` parameter for finer control
+- **Flexible Tiling:** Adapts to various tile shapes and sizes
 
 **Performance Metrics:**
 
-- **Speedup over Baseline:** ~1.29× (29% improvement)
+- **Speedup over Baseline:** ~1.29× (29% improvement) with optimal tiles
 - **Speedup over cudaDMA v1:** ~1.03× (3% improvement)
-- **Benefit:** Memory latency hiding through overlap
+- **Rectangular Tiles (64×32×16):** Maintains excellent performance with reduced shared memory
+- **Benefit:** Memory latency hiding through overlap + flexible tile optimization
 
 ---
 
@@ -231,13 +255,37 @@ nvcc -DTILE_M=64 -DTILE_N=32 -DTILE_K=32 -DSTANDARD_DATASET \
 
 ### Rectangular Tiles Support
 
-The kernels now support rectangular tiles with independent dimensions:
+All kernels now support **rectangular tiles** with independent dimensions:
 
-- **TILE_M**: Tile height (default: 32)
-- **TILE_N**: Tile width (default: 32)
-- **TILE_K**: Tile depth (default: 32)
+- **TILE_M**: Tile height (rows of output C) - Default: 32
+- **TILE_N**: Tile width (columns of output C) - Default: 32
+- **TILE_K**: Tile depth (reduction dimension) - Default: 16 or 32
 
-See [RECTANGULAR_TILES.md](RECTANGULAR_TILES.md) for detailed configuration guide.
+#### Configuration Examples
+
+```bash
+# Default rectangular configuration (recommended for most cases)
+make -f Makefile_dma TILE_M=64 TILE_N=64 TILE_K=16
+
+# Balanced rectangular tiles
+make -f Makefile_dma_v2 TILE_M=64 TILE_N=32 TILE_K=16
+
+# Wide tiles (good for matrices with more columns)
+make -f Makefile_dma TILE_M=32 TILE_N=64 TILE_K=16
+
+# Custom configuration
+nvcc -DTILE_M=64 -DTILE_N=32 -DTILE_K=32 -DSTANDARD_DATASET \
+     gemm_fp_32_cudaDMA.cu -o gemm_custom
+```
+
+#### Performance Benefits
+
+- **Memory Efficiency**: Smaller K dimension reduces shared memory usage
+- **Flexibility**: Optimize tile shape based on matrix dimensions
+- **Correctness**: All three kernels (baseline, single-buffer, double-buffer) validated
+- **Tested Configurations**: 32×32×32, 64×32×16, 32×64×16, 64×64×16 all work correctly
+
+See [RECTANGULAR_TILES.md](RECTANGULAR_TILES.md) for detailed configuration guide and performance analysis.
 
 ### Running Individual Kernels
 

@@ -25,17 +25,18 @@ Each CUDA thread block consists of 320 threads organized as follows:
 Three implementations were developed and benchmarked:
 
 \begin{enumerate}
-    \item \textbf{Baseline:} Standard tiled GEMM using 32$\times$32 tiles with shared memory. All threads perform both memory loading and computation.
+    \item \textbf{Baseline:} Standard tiled GEMM using rectangular tiles with shared memory. Uses a linear striding approach where all 256 threads cooperatively load tiles using linearized indexing. Each thread computes multiple output elements (up to 16 for large tiles) based on the tile dimensions (TILE\_M $\times$ TILE\_N $\times$ TILE\_K).
     
-    \item \textbf{cudaDMA v1 (Single Buffer):} Warp-specialized implementation with dedicated DMA warps using single buffering. Uses cudaDMAStrided API with the following configuration:
+    \item \textbf{cudaDMA v1 (Single Buffer):} Warp-specialized implementation with dedicated DMA warps using single buffering. Uses cudaDMAStrided API with flexible rectangular tile support:
     \begin{itemize}
         \item Alignment: 16 bytes (float4 vectorization)
-        \item Bytes per element: 128 bytes (one tile row)
+        \item Bytes per element: TILE\_K $\times$ 4 bytes (one tile row)
         \item DMA threads: 32 per loader warp
-        \item Elements per tile: 32 rows
+        \item Elements per tile: TILE\_M rows
+        \item Supports tiles such as 64$\times$32$\times$16, 32$\times$64$\times$16, etc.
     \end{itemize}
     
-    \item \textbf{cudaDMA v2 (Double Buffer):} Enhanced implementation using double buffering to overlap memory transfer with computation. Employs two sets of shared memory buffers that alternate in a ping-pong fashion, with total shared memory usage of 16 KB per block (8 KB for single buffer variant).
+    \item \textbf{cudaDMA v2 (Double Buffer):} Enhanced implementation using double buffering to overlap memory transfer with computation. Employs two sets of shared memory buffers that alternate in a ping-pong fashion. Shared memory usage scales with tile dimensions: 32$\times$32$\times$32 uses 16 KB, 64$\times$32$\times$16 uses 20 KB, while 64$\times$64$\times$32 uses 48 KB per block.
 \end{enumerate}
 
 \subsubsection{Double Buffering Pipeline}
@@ -88,21 +89,27 @@ HUMONGOUS & $8192^2$ & 5.234567 & 4.876543 & 4.723456 & 1.11$\times$ \\
     
     \item \textbf{Double Buffering Benefit:} cudaDMA v2 with double buffering delivers approximately \textbf{1.29$\times$ speedup} (29\% improvement), representing an additional 3-4\% gain over single buffering through effective memory-compute overlap.
     
+    \item \textbf{Rectangular Tiles Support:} All three kernels now support flexible rectangular tile dimensions (TILE\_M, TILE\_N, TILE\_K). The linear striding approach enables efficient loading of tiles with dimensions like 64$\times$32$\times$16, where each of the 256 compute threads handles multiple output elements. This provides \textbf{flexibility in memory usage} and \textbf{optimization opportunities} for different matrix shapes.
+    
+    \item \textbf{Adaptive Accumulation:} Compute threads use dynamically-sized accumulator arrays (up to 16 elements) to handle various tile sizes. For example, with 64$\times$32 tiles (2048 elements) and 256 threads, each thread computes 8 output elements, requiring an 8-element accumulator array.
+    
     \item \textbf{Memory-Bound Behavior:} Performance gains are most pronounced for small to medium-sized matrices where memory latency dominates. For larger matrices ($8192^2$), the kernel becomes more compute-bound, reducing the relative benefit of memory optimizations to approximately 1.11$\times$.
     
-    \item \textbf{Warp Specialization Trade-offs:} While warp specialization provides measurable improvements, it comes at the cost of increased code complexity, higher shared memory usage, and synchronization overhead. The technique is most effective for memory-bound workloads with regular access patterns.
+    \item \textbf{Warp Specialization Trade-offs:} While warp specialization provides measurable improvements, it comes at the cost of increased code complexity, higher shared memory usage, and synchronization overhead. The technique is most effective for memory-bound workloads with regular access patterns. Rectangular tiles offer a way to balance shared memory usage with computational efficiency.
 \end{itemize}
 
 \subsubsection{Technical Implementation Details}
 
-\textbf{Memory Access Pattern:} Each DMA thread loads 128 bytes (32 floats, representing one tile row) using coalesced float4 vectorized loads. The 32 threads in a DMA warp collectively load an entire $32 \times 32$ tile efficiently.
+\textbf{Memory Access Pattern:} Each DMA thread loads data using coalesced float4 vectorized loads. The 32 threads in a DMA warp collectively load an entire tile efficiently. With rectangular tiles, the bytes per element is calculated as TILE\_K $\times$ 4 bytes, and the number of elements (rows) is TILE\_M.
+
+\textbf{Linear Striding Approach:} The baseline and compute threads use a linear striding pattern where threads cooperatively fill shared memory. Each thread calculates its linear thread ID and iterates through tile elements using stride equal to the total thread count. This approach efficiently handles rectangular tiles of any dimension.
 
 \textbf{Synchronization:} The cudaDMA library provides built-in synchronization primitives (\texttt{start\_async\_dma()}, \texttt{wait\_for\_dma\_finish()}, \texttt{finish\_async\_dma()}) that coordinate DMA and compute warps using named barriers, minimizing synchronization overhead.
 
-\textbf{Shared Memory Configuration:} Single buffer uses 8 KB per block (two $32 \times 32$ float tiles), while double buffer uses 16 KB (four tiles). This design choice maintains reasonable occupancy while enabling the overlap strategy.
+\textbf{Shared Memory Configuration:} Memory usage scales with tile dimensions. For example: 32$\times$32$\times$32 tiles use 8 KB (single buffer) or 16 KB (double buffer); 64$\times$32$\times$16 tiles use 10 KB or 20 KB; 64$\times$64$\times$32 tiles use 24 KB or 48 KB. This flexibility allows tuning for different GPU shared memory capacities and occupancy targets.
 
 \subsubsection{Conclusions}
 
-This work demonstrates that warp specialization with cudaDMA is an effective optimization technique for GEMM operations, particularly for memory-bound scenarios. The combination of dedicated DMA warps and double buffering successfully hides memory latency, achieving nearly 30\% performance improvement over standard tiled implementations. While production libraries like cuBLAS incorporate many additional optimizations, this implementation serves as a valuable educational example of advanced CUDA programming techniques and architectural optimization strategies.
+This work demonstrates that warp specialization with cudaDMA is an effective optimization technique for GEMM operations, particularly for memory-bound scenarios. The combination of dedicated DMA warps and double buffering successfully hides memory latency, achieving nearly 30\% performance improvement over standard tiled implementations. The addition of rectangular tiles support provides flexibility in balancing memory usage and computational efficiency, enabling optimization for various matrix shapes and hardware configurations. While production libraries like cuBLAS incorporate many additional optimizations, this implementation serves as a valuable educational example of advanced CUDA programming techniques and architectural optimization strategies.
 
 % End of GEMM Warp Specialization section

@@ -263,6 +263,7 @@ void dumpMatrixToFile(bool should_i_dump, const char *filename, int ni, int nj,
 __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
                                  fp32_t *a, fp32_t *b, fp32_t *c)
 {
+    // printf("baseline\n");
     // Shared memory for tiling - rectangular tiles
     __shared__ fp32_t As[TILE_M][TILE_K];
     __shared__ fp32_t Bs[TILE_K][TILE_N];
@@ -271,48 +272,99 @@ __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t be
     int by = blockIdx.y;
     int tx = threadIdx.x;
     int ty = threadIdx.y;
+    int local_tid = ty * blockDim.x + tx;
+    int local_nthreads = blockDim.x * blockDim.y;
 
-    // Calculate global row and column for this thread
-    int row = by * TILE_M + ty;
-    int col = bx * TILE_N + tx;
+    // Calculate how many output elements each thread handles
+    int tile_elements = TILE_M * TILE_N;
+    int elements_per_thread = (tile_elements + local_nthreads - 1) / local_nthreads;
 
-    fp32_t sum = 0.0f;
+    // Array to accumulate results for multiple output elements
+    // Maximum elements per thread: max(TILE_M*TILE_N)/256 = 64*64/256 = 16
+    fp32_t sums[16] = {0.0f};
 
-    // Loop over tiles
     int numTiles = (nk + TILE_K - 1) / TILE_K;
 
-    for (int t = 0; t < numTiles; t++)
+    for (int t = 0; t < numTiles; ++t)
     {
-        // Load tile from matrix A into shared memory
-        int aCol = t * TILE_K + tx;
-        if (row < ni && aCol < nk && tx < TILE_K)
-            As[ty][tx] = alpha * a[row * nk + aCol];
-        else if (ty < TILE_M && tx < TILE_K)
-            As[ty][tx] = 0.0f;
+        int kStart = t * TILE_K;
 
-        // Load tile from matrix B into shared memory
-        int bRow = t * TILE_K + ty;
-        if (bRow < nk && col < nj && ty < TILE_K)
-            Bs[ty][tx] = b[bRow * nj + col];
-        else if (ty < TILE_K && tx < TILE_N)
-            Bs[ty][tx] = 0.0f;
+        // --- Fill As (size TILE_M x TILE_K) using linear strides ---
+        int totalA = TILE_M * TILE_K;
+        for (int idx = local_tid; idx < totalA; idx += local_nthreads)
+        {
+            int i = idx / TILE_K;       // 0..TILE_M-1
+            int k = idx % TILE_K;       // 0..TILE_K-1
+            int aRow = by * TILE_M + i; // global row in A
+            int aCol = kStart + k;      // global col in A (K dimension)
+
+            if (aRow < ni && aCol < nk)
+            {
+                As[i][k] = alpha * a[aRow * nk + aCol];
+            }
+            else
+            {
+                As[i][k] = 0.0f;
+            }
+        }
+
+        // --- Fill Bs (size TILE_K x TILE_N) using linear strides ---
+        int totalB = TILE_K * TILE_N;
+        for (int idx = local_tid; idx < totalB; idx += local_nthreads)
+        {
+            int k = idx / TILE_N;       // 0..TILE_K-1
+            int j = idx % TILE_N;       // 0..TILE_N-1
+            int bRow = kStart + k;      // global row in B (K dimension)
+            int bCol = bx * TILE_N + j; // global col in B
+
+            if (bRow < nk && bCol < nj)
+            {
+                Bs[k][j] = b[bRow * nj + bCol];
+            }
+            else
+            {
+                Bs[k][j] = 0.0f;
+            }
+        }
 
         __syncthreads();
 
-// Compute partial dot product for this tile
-#pragma unroll
-        for (int k = 0; k < TILE_K; k++)
+        // --- Compute partial dot products for multiple output elements ---
+        for (int elem = 0; elem < elements_per_thread; elem++)
         {
-            sum += As[ty][k] * Bs[k][tx];
+            int linear_idx = local_tid * elements_per_thread + elem;
+            if (linear_idx < tile_elements)
+            {
+                int tile_row = linear_idx / TILE_N;
+                int tile_col = linear_idx % TILE_N;
+
+#pragma unroll
+                for (int k = 0; k < TILE_K; ++k)
+                {
+                    sums[elem] += As[tile_row][k] * Bs[k][tile_col];
+                }
+            }
         }
 
         __syncthreads();
     }
 
-    // Write result to global memory
-    if (row < ni && col < nj)
+    // Write results (apply beta)
+    for (int elem = 0; elem < elements_per_thread; elem++)
     {
-        c[row * nj + col] = beta * c[row * nj + col] + sum;
+        int linear_idx = local_tid * elements_per_thread + elem;
+        if (linear_idx < tile_elements)
+        {
+            int tile_row = linear_idx / TILE_N;
+            int tile_col = linear_idx % TILE_N;
+            int row = by * TILE_M + tile_row;
+            int col = bx * TILE_N + tile_col;
+
+            if (row < ni && col < nj)
+            {
+                c[row * nj + col] = beta * c[row * nj + col] + sums[elem];
+            }
+        }
     }
 }
 
@@ -320,6 +372,7 @@ __global__ void gemm_kernel_fp32(int ni, int nj, int nk, fp32_t alpha, fp32_t be
 __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
                                                           fp32_t *a, fp32_t *b, fp32_t *c)
 {
+    // printf("single buffering\n");
     __shared__ fp32_t As[TILE_M][TILE_K];
     __shared__ fp32_t Bs[TILE_K][TILE_N];
 
@@ -363,7 +416,7 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
                 int ty = linear_idx / TILE_N;
                 int tx = linear_idx % TILE_N;
 
-#pragma unroll
+                #pragma unroll
                 for (int k = 0; k < TILE_K; k++)
                 {
                     sums[elem] += As[ty][k] * Bs[k][tx];
@@ -445,6 +498,7 @@ __global__ void gemm_kernel_fp32_cudaDMA_single_buffering(int ni, int nj, int nk
 __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk, fp32_t alpha, fp32_t beta,
                                                           fp32_t *a, fp32_t *b, fp32_t *c)
 {
+    // printf("double buffering\n");
     // Double buffering: two buffers for A and two for B
     __shared__ fp32_t As_0[TILE_M][TILE_K];
     __shared__ fp32_t Bs_0[TILE_K][TILE_N];
@@ -470,7 +524,8 @@ __global__ void gemm_kernel_fp32_cudaDMA_double_buffering(int ni, int nj, int nk
         int thread_id = threadIdx.x;
         constexpr int elements_per_thread = (TILE_M * TILE_N) / COMPUTE_THREADS_PER_CTA;
 
-        fp32_t sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        // Maximum elements per thread: max(TILE_M*TILE_N)/256 = 64*64/256 = 16
+        fp32_t sums[16] = {0.0f};
 
         // Load first tile into buffer 0
         dma_ld_a.start_async_dma();

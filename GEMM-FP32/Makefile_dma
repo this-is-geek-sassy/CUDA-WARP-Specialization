@@ -10,7 +10,7 @@ CUFILES := gemm_fp_32_cudaDMA.cu
 # -DHUGE_DATASET         4096x4096
 # -DHUMONGOUS_DATASET    8192x8192
 
-DATASET := -DSTANDARD_DATASET
+DATASET := -DLARGE_DATASET
 
 # Rectangular tile configuration
 # TILE_M: Tile height (rows of output C)

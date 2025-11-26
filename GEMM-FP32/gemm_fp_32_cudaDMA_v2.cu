@@ -817,7 +817,7 @@ int main(int argc, char *argv[])
 
 #ifdef RUN_ON_CPU
     // Skip CPU execution for very large datasets (>= 8192) to avoid excessive runtime
-    if (ni < 8192 && nj < 8192 && nk < 8192)
+    if (ni < 4096 && nj < 4096 && nk < 4096)
     {
         /* Start timer. */
         polybench_start_instruments;

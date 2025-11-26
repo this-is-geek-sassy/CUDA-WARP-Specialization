@@ -16,12 +16,12 @@ DATASET := -DLARGE_DATASET
 # Override these on command line: make TILE_M=64 TILE_N=64 TILE_K=16
 # Note: For cudaDMAv2, use square tiles (32x32x32) to ensure proper thread coverage
 TILE_M ?= 64
-TILE_N ?= 32
+TILE_N ?= 64
 TILE_K ?= 16
 TILE_CONFIG := -DTILE_M=$(TILE_M) -DTILE_N=$(TILE_N) -DTILE_K=$(TILE_K)
 
 ARCH := -gencode arch=compute_86,code=sm_89
-CFLAGS := -O3
+CFLAGS := -O3 --ptxas-options=-v
 
 all:
 	nvcc $(CFLAGS) $(DATASET) $(TILE_CONFIG) $(CUFILES) -o $(EXECUTABLE) $(ARCH)
