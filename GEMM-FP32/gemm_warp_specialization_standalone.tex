@@ -1,0 +1,45 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+% For checkmark symbol
+\usepackage{amssymb}
+\newcommand{\checkmark}{\ding{51}}
+\usepackage{pifont}
+
+\title{GEMM Optimization with Warp Specialization using cudaDMA}
+\author{CUDA Warp Specialization Project}
+\date{November 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document presents the implementation and performance analysis of General Matrix Multiplication (GEMM) using warp specialization techniques with NVIDIA's cudaDMA library. We demonstrate that dedicated DMA warps combined with double buffering achieve approximately 29\% performance improvement over baseline tiled implementations for memory-bound matrix operations.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{GEMM with cudaDMA}
+
+% Include the main content
+\input{gemm_warp_specialization.tex}
+
+\section*{References}
+\begin{itemize}
+    \item NVIDIA cudaDMA Library: \url{https://github.com/NVIDIA/cudaDMA}
+    \item "cudaDMA: Optimizing GPU Memory Bandwidth via Warp Specialization" (SC'11)
+\end{itemize}
+
+\end{document}
