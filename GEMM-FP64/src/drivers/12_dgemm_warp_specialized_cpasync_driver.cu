@@ -1,8 +1,9 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include "drivers/12_dgemm_cuda_dma_sas_driver.h" 
-#include "kernels/12_dgemm_cuda_dma_sas.cuh"
+#include "drivers/12_dgemm_warp_specialized_cpasync_driver.h" 
+#include "kernels/12_dgemm_warp_specialized_cpasync.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -23,15 +24,44 @@
 /// @param hA Pointer to A matrix in host memory (M x K)
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
-bool dgemm_cuda_dma_sas_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
-  const unsigned int TILE_SIZE = 32;
-  const unsigned int COMPUTE_THREADS_PER_CTA = 256;
-  const unsigned int DMA_THREADS_PER_LD = 32;
-  const unsigned int NUM_DMA_LOADERS = 2;
-  const unsigned int TOTAL_THREADS = COMPUTE_THREADS_PER_CTA + NUM_DMA_LOADERS * DMA_THREADS_PER_LD;
+bool dgemm_warp_specialized_cpasync_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+    
+  const unsigned int BM = 64;
+  const unsigned int BK = 16;
+  const unsigned int BN = 64;
+  const unsigned int TM = 4;
+  const unsigned int TN = 4;
+  const unsigned int TK = 2;
+  const unsigned int WARP_SIZE = 32;
+  const unsigned int NUM_LOAD_WARPS = 1;
+  const unsigned int NUM_LOAD_THREADS = WARP_SIZE * NUM_LOAD_WARPS;
+  const unsigned int BDM = BM/TM;
+  const unsigned int BDN = BN/TN;
+  const unsigned int NUM_COMPUTE_THREADS = BDM * BDN;
 
-  dim3 gridDim((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE, 1);
-  dim3 blockDim(TOTAL_THREADS, 1, 1);
+  auto kernel = dgemm_warp_specialized_cpasync<BM, BK, BN,
+                                               TM, TN, TK,
+                                               NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, NUM_LOAD_WARPS, WARP_SIZE>;
+  
+  cudaFuncAttributes attr;
+  cudaFuncGetAttributes(&attr, kernel);
+
+  dim3 gridDim(N/BN, M/BM, 1);
+  dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
+  // const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+  const size_t sharedMemSize = max_shmem_per_block - attr.sharedSizeBytes;
+
+  std::cout << "--- GPU PARAMS ---" << std::endl;
+  device_props<0>();
+  std::cout << "--- LAUNCH PARAMS ---" << std::endl;
+  std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
+  std::cout << "Block: (" << blockDim.x << ", " << blockDim.y << ", " << blockDim.z << ")" << std::endl;
+  std::cout << "Threads/Block: " << (blockDim.x * blockDim.y * blockDim.z) << std::endl;
+  std::cout << "Shared Mem:    " << sharedMemSize << " bytes" << std::endl;
+  std::cout << "No. load threads:    " << NUM_LOAD_THREADS << std::endl;
+  std::cout << "No. compute threads:    " << NUM_COMPUTE_THREADS << std::endl;
+  std::cout << "---------------------" << std::endl;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -47,15 +77,10 @@ bool dgemm_cuda_dma_sas_driver(float alpha, float beta, int M, int N, int K, flo
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Bank Conflicts Free Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching Warp Specialized Cpasync Kernel..." << std::endl;
+
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_cuda_dma_sas<
-    TILE_SIZE,
-    COMPUTE_THREADS_PER_CTA,
-    DMA_THREADS_PER_LD,
-    NUM_DMA_LOADERS,
-    TOTAL_THREADS
-  ><<< gridDim, blockDim >>>(M, N, K, alpha, beta, dA, dB, dC);
+  kernel<<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

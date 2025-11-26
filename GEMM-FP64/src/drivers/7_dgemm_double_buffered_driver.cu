@@ -3,6 +3,7 @@
 #include <iostream>
 #include "drivers/7_dgemm_double_buffered_driver.h" 
 #include "kernels/7_dgemm_double_buffered.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -24,6 +25,8 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
@@ -34,7 +37,8 @@ bool dgemm_double_buffered_driver(float alpha, float beta, int M, int N, int K, 
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
-  const size_t sharedMemSize = 2 * BK * (BM + BN) * sizeof(float);
+//   const size_t sharedMemSize = 2 * BK * (BM + BN) * sizeof(float);
+  const size_t sharedMemSize = max_shmem_per_block;
 
   std::cout << "--- LAUNCH PARAMS ---" << std::endl;
   std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;

@@ -3,6 +3,7 @@
 #include <iostream>
 #include "drivers/2_dgemm_2d_tiled_driver.h" 
 #include "kernels/2_dgemm_2d_tiled.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -24,15 +25,22 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_2d_tiled_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
   const unsigned int TM = 4;
   const unsigned int TN = 4;
 
+  auto kernel = dgemm_2d_tiled<BM, BK, BN, TM, TN>;
+  cudaFuncAttributes attr;
+  cudaFuncGetAttributes(&attr, kernel);
+
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
   const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
+//   const size_t sharedMemSize = max_shmem_per_block - attr.sharedSizeBytes;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -50,7 +58,7 @@ bool dgemm_2d_tiled_driver(float alpha, float beta, int M, int N, int K, float* 
 
   std::cout << "DRIVER: Launching 2D-Tiled Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_2d_tiled<BM, BK, BN, TM, TN><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  kernel<<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;

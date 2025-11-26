@@ -26,6 +26,8 @@
 /// @param hC Pointer to C matrix in host memory (M x N)
 
 bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  
   const unsigned int BM = 64;
   const unsigned int BK = 16;
   const unsigned int BN = 64;
@@ -41,7 +43,8 @@ bool dgemm_warp_specialized_driver(float alpha, float beta, int M, int N, int K,
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+//   const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+  const size_t sharedMemSize = max_shmem_per_block;
 
   std::cout << "--- GPU PARAMS ---" << std::endl;
   device_props<0>();

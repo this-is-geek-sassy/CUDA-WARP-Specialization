@@ -3,6 +3,7 @@
 #include <iostream>
 #include "drivers/10_dgemm_cuda_dma_driver.h" 
 #include "kernels/10_dgemm_cuda_dma.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -24,6 +25,8 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  
   const unsigned int BM = 64;
   const unsigned int BK = 16;
   const unsigned int BN = 64;
@@ -39,7 +42,8 @@ bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* 
 
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(NUM_LOAD_THREADS + NUM_COMPUTE_THREADS, 1, 1);
-  const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+//   const size_t sharedMemSize = BK * (BM + BN) * 2 * sizeof(float);
+  const size_t sharedMemSize = 49152;
 
   std::cout << "--- LAUNCH PARAMS ---" << std::endl;
   std::cout << "Grid:  (" << gridDim.x << ", " << gridDim.y << ", " << gridDim.z << ")" << std::endl;
@@ -64,7 +68,7 @@ bool dgemm_cuda_dma_driver(float alpha, float beta, int M, int N, int K, float* 
   if(!CUDA_CHECK(cudaEventCreate(&start))) goto cleanup;
   if(!CUDA_CHECK(cudaEventCreate(&stop))) goto cleanup;
 
-  std::cout << "DRIVER: Launching Warp Specialized Kernel..." << std::endl;
+  std::cout << "DRIVER: Launching cudaDMA Kernel..." << std::endl;
 
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
   dgemm_cuda_dma<BM, BK, BN, TM, TN, TK, NUM_LOAD_THREADS, NUM_COMPUTE_THREADS, WARP_SIZE><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);

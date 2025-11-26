@@ -3,6 +3,7 @@
 #include <iostream>
 #include "drivers/4_dgemm_register_tiled_driver.h" 
 #include "kernels/4_dgemm_register_tiled.cuh"
+#include "utils/gpu_utils.cuh"
 
 #define CUDA_CHECK(call)                                                          \
     ({                                                                            \
@@ -24,6 +25,8 @@
 /// @param hB Pointer to B matrix in host memory (K x N)
 /// @param hC Pointer to C matrix in host memory (M x N)
 bool dgemm_register_tiled_driver(float alpha, float beta, int M, int N, int K, float* hA, float* hB, float* hC) {
+  const size_t max_shmem_per_block = get_max_shmem_per_block<0>();
+  
   const unsigned int BM = 128;
   const unsigned int BK = 16;
   const unsigned int BN = 128;
@@ -32,9 +35,14 @@ bool dgemm_register_tiled_driver(float alpha, float beta, int M, int N, int K, f
   const unsigned int TK = 4;
   const unsigned int NUM_THREADS = (BN/TN) * (BM/TM);
 
+  auto kernel = dgemm_register_tiled<BM, BK, BN, TM, TN, TK, NUM_THREADS>;
+  cudaFuncAttributes attr;
+  cudaFuncGetAttributes(&attr, kernel);
+
   dim3 gridDim(N/BN, M/BM, 1);
   dim3 blockDim(BN/TN, BM/TM, 1);
   const size_t sharedMemSize = BK * (BM + BN) * sizeof(float);
+//   const size_t sharedMemSize = max_shmem_per_block - attr.sharedSizeBytes;
 
   float *dA = nullptr, *dB = nullptr, *dC = nullptr;
   if(!CUDA_CHECK(cudaMalloc(&dA, M * K * sizeof(float)))) goto cleanup;
@@ -52,7 +60,7 @@ bool dgemm_register_tiled_driver(float alpha, float beta, int M, int N, int K, f
 
   std::cout << "DRIVER: Launching Register Tiled Kernel..." << std::endl;
   if(!CUDA_CHECK(cudaEventRecord(start))) goto cleanup;
-  dgemm_register_tiled<BM, BK, BN, TM, TN, TK, NUM_THREADS><<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
+  kernel<<<gridDim, blockDim, sharedMemSize>>>(alpha, beta, M, N, K, dA, dB, dC);
   if(!CUDA_CHECK(cudaEventRecord(stop))) goto cleanup;
 
   if (!CUDA_CHECK(cudaGetLastError())) goto cleanup;
