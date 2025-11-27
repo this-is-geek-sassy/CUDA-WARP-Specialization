@@ -1,6 +1,3 @@
-Test Case    Kernel     Avg Time       
-----------------------------------------
-3            8          2350.5600      
-3            12         2149.2900      
-4            8          17838.4000     
-4            12         16713.7000     
+version https://git-lfs.github.com/spec/v1
+oid sha256:18f944c32d33c90bf068ecba7dfc5abb58f2ff163528e6f5d4da5eabfd1d95f6
+size 241
