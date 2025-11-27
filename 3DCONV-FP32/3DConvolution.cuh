@@ -61,8 +61,8 @@
 
 /* Thread block dimensions for maximum occupancy */
 /* 32x32 = 1024 threads = 32 warps per block (maximum for RTX 4060) */
-#define DIM_THREAD_BLOCK_X 32
-#define DIM_THREAD_BLOCK_Y 32
+#define DIM_THREAD_BLOCK_X 64
+#define DIM_THREAD_BLOCK_Y 16
 
 
 #endif /* !THREEDCONV*/

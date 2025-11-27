@@ -1,0 +1,41 @@
+✓ All implementations compiled successfully!
+
+Available executables:
+  - conv3d_baseline      : Baseline FP32 (no optimization, 32×32 threads)
+  - conv3d_double_buffer : Double buffering only (no warp specialization)
+  - conv3d_warp_spec     : Double buffering + warp specialization
+
+╔══════════════════════════════════════════════════════════════════╗
+║              BENCHMARKING ALL VERSIONS (5 runs each)             ║
+╚══════════════════════════════════════════════════════════════════╝
+
+1. Benchmarking conv3d_baseline (32×32 threads, no optimization)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.014152s
+  Run 2: 0.014621s
+  Run 3: 0.013977s
+  Run 4: 0.013987s
+  Run 5: 0.013746s
+  Average: .014096s (14.096ms)
+
+2. Benchmarking conv3d_double_buffer (double buffering without warp spec)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.021279s
+  Run 2: 0.021570s
+  Run 3: 0.021653s
+  Run 4: 0.021805s
+  Run 5: 0.021622s
+  Average: .021585s (21.585ms)
+
+3. Benchmarking conv3d_warp_spec (double buffering + warp specialization)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.020924s
+  Run 2: 0.021913s
+  Run 3: 0.020908s
+  Run 4: 0.021941s
+  Run 5: 0.020984s
+  Average: .021334s (21.334ms)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Benchmark complete!
+
