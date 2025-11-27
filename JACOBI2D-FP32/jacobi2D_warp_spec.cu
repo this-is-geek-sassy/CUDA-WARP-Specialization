@@ -22,8 +22,8 @@
 #define POLYBENCH_TIME 1
 
 #include "jacobi2D.cuh"
-#include "../../common/polybench.h"
-#include "../../common/polybenchUtilFuncts.h"
+#include "../common/polybench.h"
+#include "../common/polybenchUtilFuncts.h"
 
 namespace cg = cooperative_groups;
 
@@ -324,5 +324,5 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-#include "../../common/polybench.c"
+#include "../common/polybench.c"
 
