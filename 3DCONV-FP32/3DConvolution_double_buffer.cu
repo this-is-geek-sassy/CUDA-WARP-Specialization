@@ -21,8 +21,8 @@
 
 #include "3DConvolution.cuh"
 #include "../gpu_utils.h"
-#include "../../common/polybench.h"
-#include "../../common/polybenchUtilFuncts.h"
+#include "../common/polybench.h"
+#include "../common/polybenchUtilFuncts.h"
 
 //define the error threshold for the results "not matching"
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.5
@@ -285,5 +285,5 @@ int main(int argc, char *argv[])
     	return 0;
 }
 
-#include "../../common/polybench.c"
+#include "../common/polybench.c"
 
