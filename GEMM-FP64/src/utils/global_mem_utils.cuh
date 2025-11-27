@@ -46,7 +46,7 @@ __forceinline__ __device__ void readTileChunked(const unsigned int N, float* src
 
   static_assert(NUM_THREADS % BN_VECTORIZED == 0);
   constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED; 
-  // static_assert(BM % ROW_STEP == 0);
+  static_assert(BM % ROW_STEP == 0);
   constexpr unsigned int NUM_ITERS = (BM + ROW_STEP - 1) / ROW_STEP;
 
   const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x - THREAD_OFFSET;
@@ -55,7 +55,7 @@ __forceinline__ __device__ void readTileChunked(const unsigned int N, float* src
 
   #pragma unroll
   for(unsigned int i = 0; i < NUM_ITERS; i++) {
-    if(row < BM) dest_float4[row * BN_VECTORIZED + col] = src_float4[row * N_vectorized + col];
+    dest_float4[row * BN_VECTORIZED + col] = src_float4[row * N_vectorized + col];
     row += ROW_STEP;
   }
 }
