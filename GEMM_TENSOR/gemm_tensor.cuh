@@ -8,7 +8,7 @@
 
 /* Default to LARGE_DATASET (1024×1024). */
 # if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET) && !defined(HUGE_DATASET)
-#  define LARGE_DATASET
+#  define EXTRALARGE_DATASET
 # endif
 
 

@@ -154,18 +154,15 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 {
 	using namespace nvcuda::wmma;
 	
-	// Bank conflict optimization: Add padding for 16-byte alignment
-	__shared__ half shared_A[BLOCK_SIZE_M][BLOCK_SIZE_K + 8];
-	__shared__ half shared_B[BLOCK_SIZE_K][BLOCK_SIZE_N + 8];
+	// Double buffering: 2 buffers for A and B to overlap load/compute
+	__shared__ half shared_A[2][BLOCK_SIZE_M][BLOCK_SIZE_K + 8];
+	__shared__ half shared_B[2][BLOCK_SIZE_K][BLOCK_SIZE_N + 8];
 	
 	// Warp mapping: block_dim(64, 8) means 2 warps in x, 8 warps in y = 16 total warps
-	// Each warp (32 threads) spans across x dimension: threadIdx.x=0..63 (2 warps wide)
 	int warp_id = (threadIdx.y * (blockDim.x / warpSize)) + (threadIdx.x / warpSize);
 	int warp_m = warp_id / (BLOCK_SIZE_N / WMMA_N);  // 16 warps / 4 = 4 warps in M direction
 	int warp_n = warp_id % (BLOCK_SIZE_N / WMMA_N);  // 4 warps in N direction
 	
-	// With 128x64 tile: 8 tiles in M, 4 tiles in N = 32 total tiles
-	// 16 warps must handle 32 tiles, so each warp handles 2 tiles
 	int tiles_per_warp = TILES_PER_WARP;
 	
 	int block_m = blockIdx.x;
@@ -179,47 +176,86 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 		fill_fragment(acc[t], 0.0f);
 	}
 	
-	// Tile across K dimension
-	for (int k_tile = 0; k_tile < K; k_tile += BLOCK_SIZE_K) {
-		// Cooperative loading of A tile into shared memory
-		int num_threads = blockDim.x * blockDim.y;
-		int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
-		int tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
+	int num_threads = blockDim.x * blockDim.y;
+	int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
+	
+	// Prefetch first tile into buffer 0
+	int write_buffer = 0;
+	int k_tile = 0;
+	
+	// Load first A tile
+	int tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
+	for (int i = thread_id; i < tile_size; i += num_threads) {
+		int row = i / BLOCK_SIZE_K;
+		int col = i % BLOCK_SIZE_K;
+		int global_row = block_m * BLOCK_SIZE_M + row;
+		int global_col = k_tile + col;
 		
-		for (int i = thread_id; i < tile_size; i += num_threads) {
-			int row = i / BLOCK_SIZE_K;
-			int col = i % BLOCK_SIZE_K;
-			int global_row = block_m * BLOCK_SIZE_M + row;
-			int global_col = k_tile + col;
+		if (global_row < M && global_col < K) {
+			shared_A[write_buffer][row][col] = A[global_row * K + global_col];
+		} else {
+			shared_A[write_buffer][row][col] = __float2half(0.0f);
+		}
+	}
+	
+	// Load first B tile
+	tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
+	for (int i = thread_id; i < tile_size; i += num_threads) {
+		int row = i / BLOCK_SIZE_N;
+		int col = i % BLOCK_SIZE_N;
+		int global_row = k_tile + row;
+		int global_col = block_n * BLOCK_SIZE_N + col;
+		
+		if (global_row < K && global_col < N) {
+			shared_B[write_buffer][row][col] = B[global_row * N + global_col];
+		} else {
+			shared_B[write_buffer][row][col] = __float2half(0.0f);
+		}
+	}
+	
+	__syncthreads();
+	
+	// Main loop with double buffering
+	for (k_tile = 0; k_tile < K; k_tile += BLOCK_SIZE_K) {
+		int read_buffer = write_buffer;
+		write_buffer = 1 - write_buffer;  // Swap buffers
+		
+		// Prefetch next tile into write_buffer while computing with read_buffer
+		if (k_tile + BLOCK_SIZE_K < K) {
+			// Load next A tile
+			tile_size = BLOCK_SIZE_M * BLOCK_SIZE_K;
+			for (int i = thread_id; i < tile_size; i += num_threads) {
+				int row = i / BLOCK_SIZE_K;
+				int col = i % BLOCK_SIZE_K;
+				int global_row = block_m * BLOCK_SIZE_M + row;
+				int global_col = k_tile + BLOCK_SIZE_K + col;
+				
+				if (global_row < M && global_col < K) {
+					shared_A[write_buffer][row][col] = A[global_row * K + global_col];
+				} else {
+					shared_A[write_buffer][row][col] = __float2half(0.0f);
+				}
+			}
 			
-			if (global_row < M && global_col < K) {
-				shared_A[row][col] = A[global_row * K + global_col];
-			} else {
-				shared_A[row][col] = __float2half(0.0f);
+			// Load next B tile
+			tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
+			for (int i = thread_id; i < tile_size; i += num_threads) {
+				int row = i / BLOCK_SIZE_N;
+				int col = i % BLOCK_SIZE_N;
+				int global_row = k_tile + BLOCK_SIZE_K + row;
+				int global_col = block_n * BLOCK_SIZE_N + col;
+				
+				if (global_row < K && global_col < N) {
+					shared_B[write_buffer][row][col] = B[global_row * N + global_col];
+				} else {
+					shared_B[write_buffer][row][col] = __float2half(0.0f);
+				}
 			}
 		}
 		
-		// Cooperative loading of B tile into shared memory
-		tile_size = BLOCK_SIZE_K * BLOCK_SIZE_N;
-		for (int i = thread_id; i < tile_size; i += num_threads) {
-			int row = i / BLOCK_SIZE_N;
-			int col = i % BLOCK_SIZE_N;
-			int global_row = k_tile + row;
-			int global_col = block_n * BLOCK_SIZE_N + col;
-			
-			if (global_row < K && global_col < N) {
-				shared_B[row][col] = B[global_row * N + global_col];
-			} else {
-				shared_B[row][col] = __float2half(0.0f);
-			}
-		}
-		
-		__syncthreads();
-		
-		// Compute using shared memory - each warp handles TILES_PER_WARP tiles
+		// Compute using read_buffer - each warp handles TILES_PER_WARP tiles
 		for (int k_step = 0; k_step < BLOCK_SIZE_K; k_step += WMMA_K) {
 			for (int t = 0; t < TILES_PER_WARP; t++) {
-				// Map tile index to position in block
 				int tile_m = warp_m * TILES_PER_WARP + t;
 				int tile_n = warp_n;
 				
@@ -233,8 +269,8 @@ __global__ void gemm_wmma_kernel(int M, int N, int K, half alpha, half beta,
 				int global_col = block_n * BLOCK_SIZE_N + tile_n * WMMA_N;
 				
 				if (global_row < M && global_col < N && (k_tile + k_step) < K) {
-					load_matrix_sync(frag_a[t], &shared_A[smem_a_row][smem_a_col], BLOCK_SIZE_K + 8);
-					load_matrix_sync(frag_b[t], &shared_B[smem_b_row][smem_b_col], BLOCK_SIZE_N + 8);
+					load_matrix_sync(frag_a[t], &shared_A[read_buffer][smem_a_row][smem_a_col], BLOCK_SIZE_K + 8);
+					load_matrix_sync(frag_b[t], &shared_B[read_buffer][smem_b_row][smem_b_col], BLOCK_SIZE_N + 8);
 					
 					mma_sync(acc[t], frag_a[t], frag_b[t], acc[t]);
 				}
