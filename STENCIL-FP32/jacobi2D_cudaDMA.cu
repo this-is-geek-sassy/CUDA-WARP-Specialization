@@ -161,6 +161,7 @@ __global__ void jacobi2D_kernel_shared(int n, DATA_TYPE *A, DATA_TYPE *B)
  * Warp-specialized kernel using cp.async for asynchronous memory copy
  * Uses async copy intrinsics for efficient global-to-shared memory transfer
  */
+// NOT Working -- Don't touch
 template <bool DO_SYNC>
 __global__ void __launch_bounds__(TOTAL_THREADS, 1)
     jacobi2D_kernel_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
@@ -236,6 +237,8 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
         }
     }
 }
+
+// Not Working. Don't touch as well.
 /**
  * Pure cudaDMA warp-specialized kernel
  * Separates DMA threads (memory transfer) from compute threads
