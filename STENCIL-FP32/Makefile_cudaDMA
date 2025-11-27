@@ -6,7 +6,7 @@ CUFILES := jacobi2D_cudaDMA.cu
 
 # Compiler and flags
 NVCC := nvcc
-NVCCFLAGS := -O3 -arch=sm_89 -g -G
+NVCCFLAGS := -O3 -arch=sm_89 --ptxas-options=-v
 
 # Dataset size (default to STANDARD_DATASET)
 DATASET ?= STANDARD_DATASET

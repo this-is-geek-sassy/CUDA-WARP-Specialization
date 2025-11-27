@@ -241,127 +241,127 @@ __global__ void __launch_bounds__(TOTAL_THREADS, 1)
  * Separates DMA threads (memory transfer) from compute threads
  * This version attempts pure hardware DMA without software fallback
  */
-template <bool DO_SYNC>
-__global__ void
-// __launch_bounds__ (TOTAL_THREADS, 1)
-jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
-{
-    __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
+// template <bool DO_SYNC>
+// __global__ void
+// // __launch_bounds__ (TOTAL_THREADS, 1)
+// jacobi2D_kernel_pure_cudaDMA(int n, DATA_TYPE *A, DATA_TYPE *B)
+// {
+//     __shared__ DATA_TYPE tile[CUDADMA_TILE_Y][CUDADMA_TILE_X];
 
-    // printf("In jacobi2D_kernel_pure_cudaDMA\n");
+//     // printf("In jacobi2D_kernel_pure_cudaDMA\n");
 
-    // Create cudaDMA object for strided transfer
-    // cudaDMAStrided<DO_SYNC, ALIGNMENT, BYTES_PER_ELMT, DMA_THREADS, NUM_ELMTS>
-    //   BYTES_PER_ELMT = bytes per row (CUDADMA_TILE_X * sizeof(float))
-    //   NUM_ELMTS = number of rows to load (CUDADMA_TILE_Y)
-    const int BYTES_PER_ROW = sizeof(DATA_TYPE) * CUDADMA_TILE_X;
+//     // Create cudaDMA object for strided transfer
+//     // cudaDMAStrided<DO_SYNC, ALIGNMENT, BYTES_PER_ELMT, DMA_THREADS, NUM_ELMTS>
+//     //   BYTES_PER_ELMT = bytes per row (CUDADMA_TILE_X * sizeof(float))
+//     //   NUM_ELMTS = number of rows to load (CUDADMA_TILE_Y)
+//     const int BYTES_PER_ROW = sizeof(DATA_TYPE) * CUDADMA_TILE_X;
 
-    // Constructor: (dma_id, num_compute_threads, dma_threadIdx_start, src_stride, dst_stride)
-    cudaDMAStrided<true, 16, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
-        dma_loader(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
-                   n * sizeof(DATA_TYPE),               // src stride (row stride in global memory)
-                   CUDADMA_TILE_X * sizeof(DATA_TYPE)); // dst stride (row stride in shared memory)
+//     // Constructor: (dma_id, num_compute_threads, dma_threadIdx_start, src_stride, dst_stride)
+//     cudaDMAStrided<true, 16, BYTES_PER_ROW, DMA_THREADS_PER_LD, CUDADMA_TILE_Y>
+//         dma_loader(0, COMPUTE_THREADS_PER_CTA, COMPUTE_THREADS_PER_CTA,
+//                    n * sizeof(DATA_TYPE),               // src stride (row stride in global memory)
+//                    CUDADMA_TILE_X * sizeof(DATA_TYPE)); // dst stride (row stride in shared memory)
 
-    // Determine block-level coordinates for the compute region and the tile origin
-    int block_i = blockIdx.y * CUDADMA_COMPUTE_Y;
-    int block_j = blockIdx.x * CUDADMA_COMPUTE_X;
+//     // Determine block-level coordinates for the compute region and the tile origin
+//     int block_i = blockIdx.y * CUDADMA_COMPUTE_Y;
+//     int block_j = blockIdx.x * CUDADMA_COMPUTE_X;
 
-    // Tile origin (including halo): start one row/col before the compute region
-    int start_i = block_i - 1;
-    int start_j = block_j - 1;
+//     // Tile origin (including halo): start one row/col before the compute region
+//     int start_i = block_i - 1;
+//     int start_j = block_j - 1;
 
-    // Source pointer for DMA load (start of tile region in global memory)
-    // Note: This may point outside valid memory for edge blocks, handled below
-    const DATA_TYPE *src_ptr = &A[start_i * n + start_j];
+//     // Source pointer for DMA load (start of tile region in global memory)
+//     // Note: This may point outside valid memory for edge blocks, handled below
+//     const DATA_TYPE *src_ptr = &A[start_i * n + start_j];
 
-    if (dma_loader.owns_this_thread())
-    {
-        printf("DMA Thread %d in Block (%d,%d), Tile start (%d,%d)\n",
-               dma_loader.dma_tid, blockIdx.x, blockIdx.y, start_i, start_j);
-        // DMA threads: perform hardware DMA transfer
-        // Check if tile is fully in bounds - only transfer if safe
-        dma_loader.wait_for_dma_start();
-        bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
-                                    (start_i + CUDADMA_TILE_Y <= n) &&
-                                    (start_j + CUDADMA_TILE_X <= n);
+//     if (dma_loader.owns_this_thread())
+//     {
+//         printf("DMA Thread %d in Block (%d,%d), Tile start (%d,%d)\n",
+//                dma_loader.dma_tid, blockIdx.x, blockIdx.y, start_i, start_j);
+//         // DMA threads: perform hardware DMA transfer
+//         // Check if tile is fully in bounds - only transfer if safe
+//         dma_loader.wait_for_dma_start();
+//         bool tile_fully_in_bounds = (start_i >= 0) && (start_j >= 0) &&
+//                                     (start_i + CUDADMA_TILE_Y <= n) &&
+//                                     (start_j + CUDADMA_TILE_X <= n);
 
-        if (tile_fully_in_bounds)
-        {
-            // Safe to do DMA transfer - entire tile is within array bounds
-            // #if __CUDA_ARCH__ >= 350
-            //             dma_loader.execute_dma<true>(src_ptr, tile);
-            // #else
-            //             dma_loader.execute_dma(src_ptr, tile);
-            // #endif
-            dma_loader.execute_dma(src_ptr, tile);
-        }
-        else
-        {
-            // Edge block: manually load valid elements (software fallback for boundary)
-            // Zero out the entire tile first to handle out-of-bounds regions
-            int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
-            int dma_tid = threadIdx.x - COMPUTE_THREADS_PER_CTA; // 0-31 for DMA threads
-            for (int idx = dma_tid;
-                 idx < total_tile_elements;
-                 idx += DMA_THREADS_PER_LD)
-            {
-                int ii = idx / CUDADMA_TILE_X;
-                int jj = idx % CUDADMA_TILE_X;
-                int gi = start_i + ii;
-                int gj = start_j + jj;
+//         if (tile_fully_in_bounds)
+//         {
+//             // Safe to do DMA transfer - entire tile is within array bounds
+//             // #if __CUDA_ARCH__ >= 350
+//             //             dma_loader.execute_dma<true>(src_ptr, tile);
+//             // #else
+//             //             dma_loader.execute_dma(src_ptr, tile);
+//             // #endif
+//             dma_loader.execute_dma(src_ptr, tile);
+//         }
+//         else
+//         {
+//             // Edge block: manually load valid elements (software fallback for boundary)
+//             // Zero out the entire tile first to handle out-of-bounds regions
+//             int total_tile_elements = CUDADMA_TILE_Y * CUDADMA_TILE_X;
+//             int dma_tid = threadIdx.x - COMPUTE_THREADS_PER_CTA; // 0-31 for DMA threads
+//             for (int idx = dma_tid;
+//                  idx < total_tile_elements;
+//                  idx += DMA_THREADS_PER_LD)
+//             {
+//                 int ii = idx / CUDADMA_TILE_X;
+//                 int jj = idx % CUDADMA_TILE_X;
+//                 int gi = start_i + ii;
+//                 int gj = start_j + jj;
 
-                if (gi >= 0 && gi < n && gj >= 0 && gj < n)
-                {
-                    tile[ii][jj] = A[gi * n + gj];
-                }
-                else
-                {
-                    tile[ii][jj] = 0.0f;
-                }
-            }
-        }
-    }
-    else if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
-    {
-        printf("After bug constructor-1\n");
-        printf("Block (%d,%d), Tile start (%d,%d)\n", blockIdx.x, blockIdx.y, start_i, start_j);
-        // Compute threads: signal DMA threads to start, then wait for completion
-        dma_loader.start_async_dma();
-        printf("After bug constructor\n");
+//                 if (gi >= 0 && gi < n && gj >= 0 && gj < n)
+//                 {
+//                     tile[ii][jj] = A[gi * n + gj];
+//                 }
+//                 else
+//                 {
+//                     tile[ii][jj] = 0.0f;
+//                 }
+//             }
+//         }
+//     }
+//     else if (threadIdx.x < COMPUTE_THREADS_PER_CTA)
+//     {
+//         printf("After bug constructor-1\n");
+//         printf("Block (%d,%d), Tile start (%d,%d)\n", blockIdx.x, blockIdx.y, start_i, start_j);
+//         // Compute threads: signal DMA threads to start, then wait for completion
+//         dma_loader.start_async_dma();
+//         printf("After bug constructor\n");
 
-        dma_loader.wait_for_dma_finish();
+//         dma_loader.wait_for_dma_finish();
 
-        // CRITICAL: synchronize all compute threads before reading shared memory
-        __syncthreads();
+//         // CRITICAL: synchronize all compute threads before reading shared memory
+//         __syncthreads();
 
-        // Direct 1:1 mapping: each thread handles exactly one stencil point
-        // Thread index maps directly to 2D position (no strided loop needed)
-        int ty = threadIdx.x / CUDADMA_COMPUTE_X;
-        int tx = threadIdx.x % CUDADMA_COMPUTE_X;
+//         // Direct 1:1 mapping: each thread handles exactly one stencil point
+//         // Thread index maps directly to 2D position (no strided loop needed)
+//         int ty = threadIdx.x / CUDADMA_COMPUTE_X;
+//         int tx = threadIdx.x % CUDADMA_COMPUTE_X;
 
-        // Calculate global position
-        int i = blockIdx.y * CUDADMA_COMPUTE_Y + ty;
-        int j = blockIdx.x * CUDADMA_COMPUTE_X + tx;
+//         // Calculate global position
+//         int i = blockIdx.y * CUDADMA_COMPUTE_Y + ty;
+//         int j = blockIdx.x * CUDADMA_COMPUTE_X + tx;
 
-        // Only proceed if this thread's position is within the valid compute region
-        // (accounts for edge blocks that may extend beyond array boundaries)
-        if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
-        {
-            // Calculate local tile position (accounting for halo)
-            // Tile stores data starting from (start_i, start_j) = (block_i-1, block_j-1)
-            // So global position (block_i + ty, block_j + tx) maps to tile[(1+ty)][1+tx)]
-            int local_i = ty + 1; // Offset by 1 for top halo
-            int local_j = tx + 1; // Offset by 1 for left halo
+//         // Only proceed if this thread's position is within the valid compute region
+//         // (accounts for edge blocks that may extend beyond array boundaries)
+//         if ((i >= 1) && (i < (n - 1)) && (j >= 1) && (j < (n - 1)))
+//         {
+//             // Calculate local tile position (accounting for halo)
+//             // Tile stores data starting from (start_i, start_j) = (block_i-1, block_j-1)
+//             // So global position (block_i + ty, block_j + tx) maps to tile[(1+ty)][1+tx)]
+//             int local_i = ty + 1; // Offset by 1 for top halo
+//             int local_j = tx + 1; // Offset by 1 for left halo
 
-            // Compute stencil
-            B[i * n + j] = 0.2f * (tile[local_i][local_j] +     // center
-                                   tile[local_i][local_j - 1] + // left
-                                   tile[local_i][local_j + 1] + // right
-                                   tile[local_i + 1][local_j] + // bottom
-                                   tile[local_i - 1][local_j]); // top
-        }
-    }
-}
+//             // Compute stencil
+//             B[i * n + j] = 0.2f * (tile[local_i][local_j] +     // center
+//                                    tile[local_i][local_j - 1] + // left
+//                                    tile[local_i][local_j + 1] + // right
+//                                    tile[local_i + 1][local_j] + // bottom
+//                                    tile[local_i - 1][local_j]); // top
+//         }
+//     }
+// }
 
 /**
  * Copy kernel (A = B)
@@ -582,7 +582,7 @@ void runJacobi2DCUDA_cudaDMA(int tsteps, int n, DATA_TYPE POLYBENCH_2D(A, N, N, 
     polybench_start_instruments;
     for (int t = 0; t < tsteps; t++)
     {
-        jacobi2D_kernel_pure_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
+        jacobi2D_kernel_cudaDMA<true><<<grid, block>>>(n, A_gpu, B_gpu);
         cudaError_t err = cudaDeviceSynchronize();
         if (err != cudaSuccess)
         {
