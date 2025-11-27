@@ -1,0 +1,41 @@
+✓ All implementations compiled successfully!
+
+Available executables:
+  - jacobi2d_baseline      : Baseline FP32 (no optimization, 32×16 threads)
+  - jacobi2d_double_buffer : Double buffering with 2× shared memory tiles
+  - jacobi2d_warp_spec     : Warp specialization + double buffering
+
+╔══════════════════════════════════════════════════════════════════╗
+║              BENCHMARKING ALL VERSIONS (5 runs each)             ║
+╚══════════════════════════════════════════════════════════════════╝
+
+1. Benchmarking jacobi2d_baseline (32×16 threads, no optimization)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.088322s
+  Run 2: 0.088297s
+  Run 3: 0.089150s
+  Run 4: 0.088135s
+  Run 5: 0.088115s
+  Average: .088403s (88.403ms)
+
+2. Benchmarking jacobi2d_double_buffer (double buffering)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.088466s
+  Run 2: 0.087423s
+  Run 3: 0.087796s
+  Run 4: 0.088510s
+  Run 5: 0.087962s
+  Average: .088031s (88.031ms)
+
+3. Benchmarking jacobi2d_warp_spec (warp specialization + double buffering)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.088766s
+  Run 2: 0.088731s
+  Run 3: 0.090265s
+  Run 4: 0.089178s
+  Run 5: 0.090234s
+  Average: .089434s (89.434ms)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Benchmark complete!
+

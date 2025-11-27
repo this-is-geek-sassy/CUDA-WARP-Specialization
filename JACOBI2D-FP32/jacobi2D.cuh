@@ -54,7 +54,7 @@
 # endif
 
 /* Thread block dimensions for 512 threads total */
-#define DIM_THREAD_BLOCK_X 32
+#define DIM_THREAD_BLOCK_X 64
 #define DIM_THREAD_BLOCK_Y 16
 
 
