@@ -1,0 +1,52 @@
+✓ All implementations compiled successfully!
+
+Available executables:
+  - gemm_tensor                  : Baseline (FP16 with FP32 accumulation)
+  - gemm_tensor_double_buffer    : Double buffering (no warp specialization)
+  - gemm_warp_spec_single_cpasync: Warp specialization + single buffer + cp.async
+  - gemm_warp_spec_double_cpasync: Warp specialization + double buffering + cp.async
+  - gemm_tf32                    : TF32 precision (FP32 input with TF32 tensor cores)
+
+╔══════════════════════════════════════════════════════════════════╗
+║              BENCHMARKING ALL VERSIONS (5 runs each)             ║
+╚══════════════════════════════════════════════════════════════════╝
+
+1. Benchmarking gemm_tensor (baseline)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.022280s
+  Run 2: 0.022010s
+  Run 3: 0.075910s
+  Run 4: 0.021805s
+  Run 5: 0.060797s
+  Average: .040560s (40.560ms)
+
+2. Benchmarking gemm_tensor_double_buffer (double buffering, no warp spec)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.021362s
+  Run 2: 0.060506s
+  Run 3: 0.021598s
+  Run 4: 0.060868s
+  Run 5: 0.061283s
+  Average: .045123s (45.123ms)
+
+3. Benchmarking gemm_warp_spec_single_cpasync (warp spec + single buffer + cp.async)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.005644s
+  Run 2: 0.005317s
+  Run 3: 0.005694s
+  Run 4: 0.005443s
+  Run 5: 0.005704s
+  Average: .005560s (5.560ms)
+
+4. Benchmarking gemm_warp_spec_double_cpasync (warp spec + double buffer + cp.async)...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Run 1: 0.005070s
+  Run 2: 0.004714s
+  Run 3: 0.005062s
+  Run 4: 0.005067s
+  Run 5: 0.004728s
+  Average: .004928s (4.928ms)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Benchmark complete!
+
