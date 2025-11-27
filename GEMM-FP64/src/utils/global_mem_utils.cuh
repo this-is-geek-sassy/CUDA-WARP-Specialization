@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cassert>
-#include <cuda/barrier>
+#include <cuda_pipeline_primitives.h>
 
 /// @brief Reads tile of dimension (BM x BN) from src into dst.
 ///        [Batches read operations through loop unrolling and instruction re-ordering]
@@ -76,7 +76,7 @@ __device__ void writeTileChunked(const unsigned int N, float* src, float* dest) 
 
   static_assert(NUM_THREADS % BN_VECTORIZED == 0);
   constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED;
-  // static_assert(BM % ROW_STEP == 0);
+  static_assert(BM % ROW_STEP == 0);
   constexpr unsigned int NUM_ITERS = BM / ROW_STEP;
 
   const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x - THREAD_OFFSET;
@@ -85,7 +85,7 @@ __device__ void writeTileChunked(const unsigned int N, float* src, float* dest) 
 
   #pragma unroll
   for(unsigned int i = 0; i < NUM_ITERS; i++) {
-    if(row < BM) dest_float4[row * N_vectorized + col] = src_float4[row * BN_VECTORIZED + col];
+    dest_float4[row * N_vectorized + col] = src_float4[row * BN_VECTORIZED + col];
     row += ROW_STEP;
   }
 }
@@ -160,7 +160,7 @@ __forceinline__ __device__ void readTileAsync(const unsigned int N, float* src, 
 
   static_assert(NUM_THREADS % BN_VECTORIZED == 0);
   constexpr unsigned int ROW_STEP = NUM_THREADS / BN_VECTORIZED; 
-  // static_assert(BM % ROW_STEP == 0);
+  static_assert(BM % ROW_STEP == 0);
   constexpr unsigned int NUM_ITERS = (BM + ROW_STEP - 1) / ROW_STEP;
 
   const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x - THREAD_OFFSET;
@@ -169,7 +169,7 @@ __forceinline__ __device__ void readTileAsync(const unsigned int N, float* src, 
 
   #pragma unroll
   for(unsigned int i = 0; i < NUM_ITERS; i++) {
-    if(row < BM) __pipeline_memcpy_async(&dest_float4[write_stage_idx][As_idx], src_float4[row * N_vectorized + col], sizeof(float4));
+    __pipeline_memcpy_async(&dest_float4[row * BN_VECTORIZED + col], &src_float4[row * N_vectorized + col], sizeof(float4));
     row += ROW_STEP;
   }
 }

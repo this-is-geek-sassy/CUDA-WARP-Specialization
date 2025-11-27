@@ -71,11 +71,9 @@ __global__ void dgemm_2d_tiled(float alpha, float beta, int M, int N, int K, flo
     __syncthreads();
   }
 
-  for(int i = 0; i < TM; i++) {
-    for(int j = 0; j < TN; j++) {
+  for(int i = 0; i < TM; i++) 
+    for(int j = 0; j < TN; j++) 
       C[(bm + ty * TM + i) * N + (bn + tx * TN + j)] = alpha * acc_reg[i][j] + beta * C[(bm + ty * TM + i) * N + (bn + tx * TN + j)];
-    }
-  }
 }
 
 #endif // DGEMM_2D_TILED_CUH

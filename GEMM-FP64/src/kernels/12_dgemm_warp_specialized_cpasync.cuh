@@ -3,7 +3,7 @@
 
 #include <cuda.h>
 #include <cassert>
-#include <cuda/barrier>
+#include <cuda_pipeline_primitives.h>
 #include "utils/global_mem_utils.cuh"
 
 /// @brief Double Buffered DGEMM Kernel
@@ -28,22 +28,17 @@ __global__ void dgemm_warp_specialized_cpasync(float alpha, float beta, int M, i
   constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
   constexpr unsigned int NUM_LOAD_THREADS = NUM_LOAD_WARPS * WARP_SIZE;
 
-  __shared__ cuda::barrier<cuda::thread_scope_block> bar;
   extern __shared__ float sm[];
 
   float* sA[2] = {&sm[0], &sm[BM * BK]};
   float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
+  float* sC = &sm[2 * BK * (BM + BN)];
 
   const unsigned int bm = blockIdx.y * BM;
   const unsigned int bn = blockIdx.x * BN;
 
   unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x;
   const bool isLoadWarp = tId < NUM_LOAD_THREADS;
-
-  if (tId == 0) {
-    init(&bar, NUM_THREADS);
-  }
-  __syncthreads();
 
   if(isLoadWarp) {
     //// LOAD WARPS
@@ -52,36 +47,11 @@ __global__ void dgemm_warp_specialized_cpasync(float alpha, float beta, int M, i
     float* gB = B + bn;
 
     for(unsigned int bk = 0; bk < K; bk += BK) {
-      // Load the next tile into sA.
-      constexpr unsigned int NUM_SA_ITERS = (BM + NUM_LOAD_THREADS - 1) / NUM_LOAD_THREADS;
-      unsigned int row = tId;
+      // Load the next tile into extra buffers.
+      readTileAsync<BM, BK, NUM_LOAD_THREADS, 0>(K, gA, sA[buf]);
+      readTileAsync<BK, BN, NUM_LOAD_THREADS, 0>(N, gB, sB[buf]);
+      __pipeline_commit();
 
-      for(int i = 0; i < NUM_SA_ITERS; i++) {
-        if(row < BM)
-          cuda::memcpy_async(
-            &sA[buf][row * BK],
-            &gA[row * K],
-            cuda::aligned_size_t<16>(BK * sizeof(float)),
-            bar
-          );
-        row += NUM_LOAD_THREADS;
-      }
-
-      // Load the next tile into sB.
-      constexpr unsigned int NUM_SB_ITERS = (BK + NUM_LOAD_THREADS - 1) / NUM_LOAD_THREADS;
-      row = tId;
-
-      for(int i = 0; i < NUM_SB_ITERS; i++) {
-        if(row < BK)
-          cuda::memcpy_async(
-            &sB[buf][row * BN],
-            &gB[row * N],
-            cuda::aligned_size_t<16>(BN * sizeof(float)),
-            bar
-          );
-        row += NUM_LOAD_THREADS;
-      }
-    
       // Update pointers to next tile.
       gA += BK;
       gB += BK * N;
@@ -89,8 +59,8 @@ __global__ void dgemm_warp_specialized_cpasync(float alpha, float beta, int M, i
       // Swap buffers.
       buf ^= 1;
 
-      // Sync with the compute threads.
-      bar.arrive_and_wait();
+      __pipeline_wait_prior(0); 
+      __syncthreads(); // Sync with the compute warps.
     }
   } else {
     //// COMPUTE WARPS
@@ -106,7 +76,7 @@ __global__ void dgemm_warp_specialized_cpasync(float alpha, float beta, int M, i
         acc_reg[i][j] = 0.0;
 
     for(unsigned int bk = 0; bk < K; bk += BK) {
-      bar.arrive_and_wait(); // Sync with the load warps.
+      __syncthreads(); // Sync with the load warps.
 
       for(int k = 0; k < BK; k++)
         for(int i = 0; i < TM; i++)

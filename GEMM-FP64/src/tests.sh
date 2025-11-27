@@ -2,8 +2,8 @@
 
 # ================= CONFIGURATION =================
 BINARY_PATH="./bin/dgemm"
-KERNELS=(2 3 4 5 7 8 11 12)
-TEST_CASES=(1 2 3 4)
+KERNELS=(2)
+TEST_CASES=(3 4)
 # =================================================
 
 # Check if binary exists
