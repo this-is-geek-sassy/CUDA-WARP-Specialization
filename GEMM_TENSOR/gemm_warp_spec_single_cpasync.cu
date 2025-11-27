@@ -15,8 +15,8 @@ using namespace nvcuda;
 #define POLYBENCH_TIME 1
 
 #include "gemm_tensor.cuh"
-#include "../../common/polybench.h"
-#include "../../common/polybenchUtilFuncts.h"
+#include "../common/polybench.h"
+#include "../common/polybenchUtilFuncts.h"
 
 #define GPU_DEVICE 0
 
@@ -472,4 +472,4 @@ int main(int argc, char *argv[])
     	return 0;
 }
 
-#include "../../common/polybench.c"
+#include "../common/polybench.c"
