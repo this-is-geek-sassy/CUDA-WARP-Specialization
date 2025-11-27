@@ -45,9 +45,9 @@ def generate_matrix_multiplication_test_cases(test_cases, output_dir="test_cases
             continue
 
         # Perform the matrix multiplication
-        matrix_C = np.dot(matrix_A, matrix_B)
+        # matrix_C = np.dot(matrix_A, matrix_B)
 
-        print(f"  Result C dimensions: {matrix_C.shape[0]}x{matrix_C.shape[1]}")
+        # print(f"  Result C dimensions: {matrix_C.shape[0]}x{matrix_C.shape[1]}")
 
         # Define file paths
         path_A = os.path.join(output_dir, f"A_{case_num}.csv")
@@ -58,7 +58,7 @@ def generate_matrix_multiplication_test_cases(test_cases, output_dir="test_cases
         # fmt='%d' ensures the numbers are saved as integers
         np.savetxt(path_A, matrix_A, delimiter=",", fmt='%d')
         np.savetxt(path_B, matrix_B, delimiter=",", fmt='%d')
-        np.savetxt(path_C, matrix_C, delimiter=",", fmt='%d')
+        np.savetxt(path_C, matrix_A, delimiter=",", fmt='%d')
 
         print(f"  Successfully saved: {path_A}, {path_B}, {path_C}")
 

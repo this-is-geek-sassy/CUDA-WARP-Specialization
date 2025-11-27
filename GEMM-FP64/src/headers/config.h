@@ -65,7 +65,6 @@
 #define NUM_GLOBAL_LOAD_WARPS9 4
 ////
 
-//// DOES NOT WORK
 #define BM10 128
 #define BK10 16
 #define BN10 128
@@ -73,7 +72,7 @@
 #define TN10 8
 #define TK10 4
 #define WARP_SIZE10 32
-#define NUM_LOAD_WARPS10 4
+#define NUM_LOAD_WARPS10 2
 ////
 
 #define BM11 64

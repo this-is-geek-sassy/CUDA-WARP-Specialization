@@ -21,31 +21,33 @@
 /// @param A Pointer to A matrix (M x K)
 /// @param B Pointer to B matrix (K x N)
 /// @param C Pointer to C matrix (M x N)
-template<unsigned int BM, unsigned int BK, unsigned int BN,
-         unsigned int TM, unsigned int TN, unsigned int TK,
-         unsigned int NUM_LOAD_WARPS, unsigned int NUM_COMPUTE_WARPS, unsigned int WARP_SIZE>
-__global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, float* A, float* B, float* C) {
-  constexpr unsigned int BDM = (BM/TM); // blockDim.y (compile time constant)
-  constexpr unsigned int BDN = (BN/TN); // blockDim.x (compile time constant)
+template <unsigned int BM, unsigned int BK, unsigned int BN,
+          unsigned int TM, unsigned int TN, unsigned int TK,
+          unsigned int NUM_LOAD_WARPS, unsigned int NUM_COMPUTE_WARPS, unsigned int WARP_SIZE>
+__global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, float *A, float *B, float *C)
+{
+  constexpr unsigned int BDM = (BM / TM); // blockDim.y (compile time constant)
+  constexpr unsigned int BDN = (BN / TN); // blockDim.x (compile time constant)
 
   constexpr unsigned int NUM_LOAD_THREADS_PER_LD = NUM_LOAD_WARPS * WARP_SIZE / 2;
   constexpr unsigned int NUM_COMPUTE_THREADS = NUM_COMPUTE_WARPS * WARP_SIZE;
 
   extern __shared__ float sm[];
-  float* sA[2] = {&sm[0], &sm[BM * BK]};
-  float* sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
+  float *sA[2] = {&sm[0], &sm[BM * BK]};
+  float *sB[2] = {&sm[2 * BM * BK], &sm[2 * BM * BK + BK * BN]};
 
   const unsigned int bm = blockIdx.y * BM;
   const unsigned int bn = blockIdx.x * BN;
 
-  const unsigned int tId = threadIdx.y * blockDim.x + threadIdx.x;
+  const unsigned int tId = threadIdx.x;
 
-  cudaDMAStrided<true, 16, 128, NUM_LOAD_THREADS_PER_LD, BM>
-    dma_A(1, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS, sizeof(float)*K, sizeof(float)*BK);
-  cudaDMAStrided<true, 16, 128, NUM_LOAD_THREADS_PER_LD, BK>
-    dma_B(2, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS + NUM_LOAD_THREADS_PER_LD, sizeof(float)*N, sizeof(float)*BN);
+  cudaDMAStrided<true, 16, BK * sizeof(float), NUM_LOAD_THREADS_PER_LD, BM>
+      dma_A(0, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS, sizeof(float) * K, sizeof(float) * BK);
+  cudaDMAStrided<true, 16, BN * sizeof(float), NUM_LOAD_THREADS_PER_LD, BK>
+      dma_B(1, NUM_COMPUTE_THREADS, NUM_COMPUTE_THREADS + NUM_LOAD_THREADS_PER_LD, sizeof(float) * N, sizeof(float) * BN);
 
-  if(tId < NUM_COMPUTE_THREADS) {
+  if (tId < NUM_COMPUTE_THREADS)
+  {
     //// COMPUTE WARPS
     const unsigned int tx = tId % BDN;
     const unsigned int ty = tId / BDN;
@@ -53,55 +55,64 @@ __global__ void dgemm_cuda_dma(float alpha, float beta, int M, int N, int K, flo
     int mem = 0;
     float acc_reg[TM][TN];
 
-    for(int i = 0; i < TM; i++)
-      for(int j = 0; j < TN; j++)
+    for (int i = 0; i < TM; i++)
+      for (int j = 0; j < TN; j++)
         acc_reg[i][j] = 0.0;
 
     // Start load of the first tile.
     dma_A.start_async_dma();
     dma_B.start_async_dma();
 
-    for(unsigned int bk = BK; bk < K; bk += BK) {
+    unsigned int numTiles = (K + BK - 1) / BK;
+    for (unsigned int t = 0; t < numTiles; t++)
+    {
       dma_A.wait_for_dma_finish();
       dma_B.wait_for_dma_finish();
 
-      for(int k = 0; k < BK; k++)
-        for(int i = 0; i < TM; i++)
-          for(int j = 0; j < TN; j++)
+      // Start loading next tile (if not last)
+      if (t < numTiles - 1)
+      {
+        dma_A.start_async_dma();
+        dma_B.start_async_dma();
+      }
+
+      // Compute on current tile
+      for (int k = 0; k < BK; k++)
+        for (int i = 0; i < TM; i++)
+          for (int j = 0; j < TN; j++)
             acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
 
       mem ^= 1;
-
-      dma_A.start_async_dma();
-      dma_B.start_async_dma();
     }
-    
-    dma_A.wait_for_dma_finish();
-    dma_B.wait_for_dma_finish();
-
-    for(int k = 0; k < BK; k++)
-      for(int i = 0; i < TM; i++)
-        for(int j = 0; j < TN; j++)
-          acc_reg[i][j] = fma(sA[mem][(ty + i * BDM) * BK + k], sB[mem][k * BN + (tx + j * BDN)], acc_reg[i][j]);
 
     // Epilogue
-    for(int i = 0; i < TM; i++) {
-      for(int j = 0; j < TN; j++) {
+    for (int i = 0; i < TM; i++)
+    {
+      for (int j = 0; j < TN; j++)
+      {
         C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)] = alpha * acc_reg[i][j] + beta * C[(bm + ty + i * BDM) * N + (bn + tx + j * BDN)];
       }
     }
-  } else if(dma_A.owns_this_thread()) {
+  }
+  else if (dma_A.owns_this_thread())
+  {
+    unsigned int numTiles = (K + BK - 1) / BK;
     int buf = 0;
-    float* gA = A + bm * K;
-    for(unsigned int bk = 0; bk < K; bk += BK) {
+    float *gA = A + bm * K;
+    for (unsigned int t = 0; t < numTiles; t++)
+    {
       dma_A.execute_dma(gA, sA[buf]);
       gA += BK;
       buf ^= 1;
     }
-  } else if(dma_B.owns_this_thread()) {
+  }
+  else if (dma_B.owns_this_thread())
+  {
+    unsigned int numTiles = (K + BK - 1) / BK;
     int buf = 0;
-    float* gB = B + bn;
-    for(unsigned int bk = 0; bk < K; bk += BK) {
+    float *gB = B + bn;
+    for (unsigned int t = 0; t < numTiles; t++)
+    {
       dma_B.execute_dma(gB, sB[buf]);
       gB += BK * N;
       buf ^= 1;
