@@ -1,0 +1,66 @@
+% cudaDMA Illegal Instruction Issue Summary
+% Include this file in your main document with \input{cudadma-illegal-instruction-issue}
+
+\subsection{cudaDMA Illegal Instruction Issue}
+
+\subsubsection{Problem Description}
+
+The \texttt{jacobi2D\_cudaDMA} kernel encounters an illegal instruction error when compiled with optimizations (\texttt{-O2}/\texttt{-O3}), but runs without errors when compiled with debug flags (\texttt{-g -G}). However, a critical observation reveals suspicious behavior even in the debug build:
+
+\begin{itemize}
+    \item \textbf{No illegal instruction error} in debug mode
+    \item \textbf{No CPU-GPU mismatch} reported (results appear correct)
+    \item \textbf{Print statements inside kernel do NOT appear} in console output
+\end{itemize}
+
+This suggests the kernel may not be executing at all, yet falsely reports success.
+
+\subsubsection{Root Causes}
+
+\begin{enumerate}
+    \item \textbf{Architecture mismatch:} The \texttt{cudaDMAStrided} helper likely emits SM80+ instructions (e.g., \texttt{cp.async}) that are unsupported on older GPUs. Optimized builds inline these instructions without runtime guards.
+    
+    \item \textbf{Silent kernel launch failure:} In debug builds, the kernel may fail to launch but errors are not checked, while pre-initialized output buffers contain values matching CPU results.
+    
+    \item \textbf{Missing architecture guards:} Device code lacks \texttt{\_\_CUDA\_ARCH\_\_} preprocessor guards to provide fallback implementations for older compute capabilities.
+\end{enumerate}
+
+\subsubsection{Diagnostic Steps Performed}
+
+\begin{itemize}
+    \item Verified behavioral difference between debug (\texttt{-g -G}) and release (\texttt{-O3}) builds
+    \item Observed missing kernel \texttt{printf} output despite ``successful'' execution
+    \item Identified need for explicit error checking after kernel launch
+    \item Recommended sentinel value initialization to verify kernel execution
+\end{itemize}
+
+\subsubsection{Recommended Fixes}
+
+\begin{enumerate}
+    \item \textbf{Add explicit error checking:}
+    \begin{verbatim}
+    kernel<<<grid, block>>>(args);
+    cudaGetLastError(); cudaDeviceSynchronize();
+    \end{verbatim}
+    
+    \item \textbf{Guard advanced instructions by compute capability:}
+    \begin{verbatim}
+    #if __CUDA_ARCH__ >= 800
+      // Use cp.async (Ampere+)
+    #else
+      // Fallback: regular loads
+    #endif
+    \end{verbatim}
+    
+    \item \textbf{Target correct architecture:}
+    \begin{verbatim}
+    nvcc -gencode=arch=compute_70,code=sm_70 \
+         -gencode=arch=compute_80,code=sm_80
+    \end{verbatim}
+    
+    \item \textbf{Initialize output buffers with sentinel values} (e.g., \texttt{-999.0f}) to detect whether kernel modifies data
+\end{enumerate}
+
+\subsubsection{Workaround}
+
+Compile with device debugging enabled: \texttt{nvcc -G -g -O0}. Note this disables optimizations and is unsuitable for performance measurements.
