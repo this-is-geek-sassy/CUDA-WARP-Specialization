@@ -105,7 +105,7 @@ This raises a concerning possibility: **The kernel may not be launching at all i
 
 1. **Architecture-specific instructions emitted in optimized code**
 
-   - The DMA helper (`CudaDMAStrided`) likely emits recent GPU instructions (for example `cp.async`) or uses inline PTX/SASS sequences that exist only on newer SM versions (Ampere+ / SM80+).
+   - The DMA helper (`CudaDMAStrided`) likely emits older GPU instructions which are no loger supported or recognized in newer GPUs.
    - In optimized builds, NVCC can generate those instructions (or inline them) if the compile target allows it. If the runtime GPU does not support them, the kernel will raise an illegal instruction at runtime.
 
 2. **Optimizations exposing architecture-dependent code paths**
@@ -227,14 +227,6 @@ nvcc -O3 \
 
 ---
 
-## Contact / next steps
 
-If you want, I can:
-
-- Produce a guarded patch for `CudaDMAStrided` that adds an explicit portable fallback and guarded fast path (I can edit `/mnt/data/jacobi2D_cudaDMA.cuh` and `/mnt/data/jacobi2D_cudaDMA.cu`).
-- Provide the exact `nvcc` flags to build for a specific GPU model — paste the `nvidia-smi` / `deviceQuery` output.
-- Run a short `cuobjdump` analysis and point out the failing SASS instruction if you attach the debug/release binaries or their SASS text.
-
----
 
 _End of README._
